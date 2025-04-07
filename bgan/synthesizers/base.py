@@ -57,7 +57,7 @@ def random_state(function):
 
 
 class BaseSynthesizer:
-    """Base class for all default synthesizers of ``CTGAN``."""
+    """Base class for all default synthesizers of ``BGAN``."""
 
     random_states = None
 

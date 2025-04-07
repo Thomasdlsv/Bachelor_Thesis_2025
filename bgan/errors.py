@@ -1,4 +1,4 @@
-"""Custom errors for CTGAN."""
+"""Custom errors for BGAN."""
 
 
 class InvalidDataError(Exception):

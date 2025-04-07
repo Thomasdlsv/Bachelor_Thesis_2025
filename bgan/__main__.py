@@ -2,12 +2,12 @@
 
 import argparse
 
-from ctgan.data import read_csv, read_tsv, write_tsv
-from ctgan.synthesizers.ctgan import CTGAN
+from bgan.data import read_csv, read_tsv, write_tsv
+from bgan.synthesizers.bgan import BGAN
 
 
 def _parse_args():
-    parser = argparse.ArgumentParser(description='CTGAN Command Line Interface')
+    parser = argparse.ArgumentParser(description='BGAN Command Line Interface')
     parser.add_argument('-e', '--epochs', default=300, type=int, help='Number of training epochs')
     parser.add_argument(
         '-t', '--tsv', action='store_true', help='Load data in TSV format instead of CSV'
@@ -95,11 +95,11 @@ def main():
         data, discrete_columns = read_csv(args.data, args.metadata, args.header, args.discrete)
 
     if args.load:
-        model = CTGAN.load(args.load)
+        model = BGAN.load(args.load)
     else:
         generator_dim = [int(x) for x in args.generator_dim.split(',')]
         discriminator_dim = [int(x) for x in args.discriminator_dim.split(',')]
-        model = CTGAN(
+        model = BGAN(
             embedding_dim=args.embedding_dim,
             generator_dim=generator_dim,
             discriminator_dim=discriminator_dim,
