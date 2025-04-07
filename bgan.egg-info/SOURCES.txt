@@ -1,0 +1,14 @@
+pyproject.toml
+setup.py
+bgan/__init__.py
+bgan/__main__.py
+bgan/data.py
+bgan/data_sampler.py
+bgan/data_transformer.py
+bgan/demo.py
+bgan/errors.py
+bgan.egg-info/PKG-INFO
+bgan.egg-info/SOURCES.txt
+bgan.egg-info/dependency_links.txt
+bgan.egg-info/requires.txt
+bgan.egg-info/top_level.txt

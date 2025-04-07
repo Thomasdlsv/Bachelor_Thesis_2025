@@ -1,5 +1,5 @@
-from ctgan import CTGAN
-from ctgan import load_demo
+from bgan.synthesizers.bgan import BGAN
+from bgan import load_demo
 import numpy as np
 from scipy import stats
 
@@ -17,8 +17,8 @@ def test_load_demo():
         'native-country',
         'income',
     ]
-    print("\nInitializing CTGAN model...")
-    ctgan = CTGAN(epochs=1)
+    print("\nInitializing BGAN model...")
+    ctgan = BGAN(epochs=1)
 
     # Run
     print("Loading demo data...")

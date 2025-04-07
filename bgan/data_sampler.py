@@ -4,7 +4,7 @@ import numpy as np
 
 
 class DataSampler(object):
-    """DataSampler samples the conditional vector and corresponding data for CTGAN."""
+    """DataSampler samples the conditional vector and corresponding data for BGAN."""
 
     def __init__(self, data, output_info, log_frequency):
         self._data_length = len(data)

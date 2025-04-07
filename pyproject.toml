@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bgan"
+version = "0.1.0"
+description = "BGAN Implementation"
+requires-python = ">=3.6"
+dependencies = [
+    "numpy>=2.0.2",
+    "pandas>=2.2.3",
+    "rdt>=1.15.0",
+    "torch>=2.6.0",
+    "tqdm>=4.67.1"
+]
+
+[tool.setuptools]
+packages = ["bgan"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools.dynamic]
+version = {attr = "bgan.__version__"}
