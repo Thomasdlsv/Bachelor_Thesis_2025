@@ -12,11 +12,12 @@ dependencies = [
     "pandas>=2.2.3",
     "rdt>=1.15.0",
     "torch>=2.6.0",
-    "tqdm>=4.67.1"
+    "tqdm>=4.67.1",
+    "tensorflow>=2.0.0"
 ]
 
 [tool.setuptools]
-packages = ["bgan"]
+packages = ["bgan", "baseline_gan"]
 
 [project.optional-dependencies]
 test = ["pytest"]
