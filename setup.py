@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
     name="bgan",
     version="0.1.0",
-    packages=find_packages(include=['bgan', 'bgan.*','baseline_gan', 'baseline_gan.*','ResearchQuestions', 'ResearchQuestions.*']),
+    packages=find_packages(include=['bgan', 'bgan.*', 'ResearchQuestions', 'ResearchQuestions.*', 'bayesian_network', 'bayesian_network.*']),      
     python_requires=">=3.6",
     install_requires=[
         "numpy>=2.0.2",
