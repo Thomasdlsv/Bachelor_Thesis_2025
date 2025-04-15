@@ -8,6 +8,7 @@ Requires-Dist: pandas>=2.2.3
 Requires-Dist: rdt>=1.15.0
 Requires-Dist: torch>=2.6.0
 Requires-Dist: tqdm>=4.67.1
+Requires-Dist: tensorflow>=2.0.0
 Provides-Extra: test
 Requires-Dist: pytest; extra == "test"
 Dynamic: requires-python
