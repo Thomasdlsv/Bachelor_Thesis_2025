@@ -1,9 +1,9 @@
 pyproject.toml
 setup.py
-baseline_gan/__init__.py
-baseline_gan/data_loader.py
-baseline_gan/gan.py
-baseline_gan/utils.py
+bayesian_network/BayesianGANInference.py
+bayesian_network/BayesianGANPipeline.py
+bayesian_network/DataSamplerBN.py
+bayesian_network/__init__.py
 bgan/__init__.py
 bgan/__main__.py
 bgan/data.py
