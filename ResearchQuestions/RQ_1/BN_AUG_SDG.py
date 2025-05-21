@@ -1,86 +1,324 @@
-from bayesian_network.DataSamplerBN import ColumnInfo
-from bayesian_network.BayesianGANInference import BayesianGANInference
-from bayesian_network.BayesianGANPipeline import BayesianGANPipeline
-from ResearchQuestions.RQ_1.DataComparisonPlotter import DataComparisonPlotter
 import numpy as np
-from sklearn.preprocessing import LabelEncoder
+from torch import optim
+from sklearn.calibration import LabelEncoder
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import f1_score, mutual_info_score, precision_score, recall_score, accuracy_score
+from sklearn.model_selection import train_test_split
+import torch
+from bgan.data_transformer import DataTransformer
+from bgan.synthesizers.bgan import BGAN
 import pandas as pd
-from sklearn.metrics import mean_squared_error, accuracy_score
+import torch.nn as nn
+from pgmpy.estimators import HillClimbSearch
+from pgmpy.estimators import BIC
+from scipy.stats import wasserstein_distance
 
-class BN_AUG_SDG:
-    pass
+# Refactor Generator with Batch Normalization
+class GeneratorWithBN(nn.Module):
+    def __init__(self, input_dim, output_dim, hidden_dims, bn_structure=None, use_spectral_norm=False):
+        super(GeneratorWithBN, self).__init__()
+        
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.bn_structure = bn_structure
+        self.use_spectral_norm = use_spectral_norm
 
-if __name__ == "__main__":
+        # Double the hidden size for deeper capacity
+        hidden_dims = [dim * 2 for dim in hidden_dims]
+        self.gate_log = {}  # Track gate values per node
+        
+        self.layers = nn.ModuleList()
+        self.skip_layers = nn.ModuleList()
+        self.bn_layers = nn.ModuleList()
+        prev_dim = input_dim
+        
+        for hidden_dim in hidden_dims:
+            main_layer = nn.Sequential(
+                self._linear(prev_dim, hidden_dim),
+                nn.BatchNorm1d(hidden_dim),
+                nn.LeakyReLU(0.2),
+                nn.Dropout(0.2)
+            )
+            self.layers.append(main_layer)
+            self.skip_layers.append(nn.Sequential(
+                self._linear(input_dim, hidden_dim),
+                nn.BatchNorm1d(hidden_dim)
+            ))
+            prev_dim = hidden_dim
+
+        self.output_layer = nn.Sequential(
+            self._linear(prev_dim, output_dim),
+            nn.BatchNorm1d(output_dim),
+            nn.Tanh()
+        )
+
+        if bn_structure:
+            self.bn_transforms = nn.ModuleDict()
+            self.bn_attention = nn.ModuleDict()
+            self.bn_combine = nn.ModuleDict()
+            
+            for node, parents in bn_structure.items():
+                if parents:
+                    self.bn_transforms[str(node)] = nn.Sequential(
+                        self._linear(len(parents) * input_dim, input_dim * 2),
+                        nn.LayerNorm(input_dim * 2),
+                        nn.ReLU(),
+                        nn.Linear(input_dim * 2, input_dim),
+                        nn.LayerNorm(input_dim)
+                    )
+                    
+                    self.bn_attention[str(node)] = nn.Sequential(
+                        nn.Linear(input_dim, len(parents) * 8),
+                        nn.LayerNorm(len(parents) * 8),
+                        nn.ReLU(),
+                        nn.Linear(len(parents) * 8, len(parents)),
+                        nn.Sigmoid()  # Changed from softmax to sigmoid for gating
+                    )
+                    
+                    self.bn_combine[str(node)] = nn.Sequential(
+                        nn.Linear(input_dim * 2, input_dim),
+                        nn.LayerNorm(input_dim),
+                        nn.ReLU()
+                    )
+
+    def _linear(self, in_dim, out_dim):
+        layer = nn.Linear(in_dim, out_dim)
+        return nn.utils.spectral_norm(layer) if self.use_spectral_norm else layer
+
+    def forward(self, x):
+        original_x = x.clone()
+        
+        for idx, (layer, skip) in enumerate(zip(self.layers, self.skip_layers)):
+            main_path = layer(x)
+            skip_path = skip(original_x)
+
+            # Adaptive skip-main gate
+            gate = torch.sigmoid(torch.mean(parent_influence, dim=1, keepdim=True))
+
+            # Log gate values
+            if str(node) not in self.gate_log:
+                self.gate_log[str(node)] = []
+            self.gate_log[str(node)].append(gate.detach().cpu().mean().item())
+
+            x = gate * main_path + (1 - gate) * skip_path
+
+            # BN integration
+            if self.bn_structure and hasattr(self, 'bn_transforms'):
+                if not hasattr(self, 'gate_log'):
+                    self.gate_log = {}
+                for node, parents_with_weights in self.bn_structure.items():
+                    if str(node) not in self.bn_transforms:
+                        continue
+                    
+                    node_idx = int(node)
+                    node_features = x[:, node_idx:node_idx + 1]
+
+                    parents, weights = zip(*parents_with_weights)
+                    weights_tensor = torch.tensor(weights, dtype=torch.float32, device=x.device)
+
+                    parent_embeddings = torch.cat([
+                        x[:, int(p):int(p) + 1] * w
+                        for p, w in zip(parents, weights)
+                    ], dim=1)
+
+                    attention = self.bn_attention[str(node)](node_features)
+                    attention = attention * weights_tensor.unsqueeze(0)  # Apply gating
+                    parent_influence = self.bn_transforms[str(node)](parent_embeddings * attention)
+
+                    combined = torch.cat([node_features, parent_influence], dim=1)
+                    update = self.bn_combine[str(node)](combined)
+
+                    influence_gate = torch.sigmoid(torch.mean(parent_influence, dim=1, keepdim=True))
+                    x[:, node_idx:node_idx + 1] = influence_gate * update + (1 - influence_gate) * node_features
+
+        return self.output_layer(x)
+
+# Refactor Discriminator with Batch Normalization
+class DiscriminatorWithBN(nn.Module):
+    def __init__(self, input_dim, hidden_dims, use_spectral_norm=False, return_features=False):
+        super(DiscriminatorWithBN, self).__init__()
+        
+        self.use_spectral_norm = use_spectral_norm
+        self.return_features = return_features
+        self.hidden_layers = nn.ModuleList()
+        
+        prev_dim = input_dim
+        for hidden_dim in hidden_dims:
+            self.hidden_layers.append(nn.Sequential(
+                self._linear(prev_dim, hidden_dim),
+                nn.BatchNorm1d(hidden_dim),
+                nn.LeakyReLU(0.2, inplace=True)
+            ))
+            prev_dim = hidden_dim
+        
+        self.output_layer = nn.Sequential(
+            self._linear(prev_dim, 1),
+            nn.Sigmoid()
+        )
+
+    def _linear(self, in_dim, out_dim):
+        layer = nn.Linear(in_dim, out_dim)
+        return nn.utils.spectral_norm(layer) if self.use_spectral_norm else layer
+
+    def forward(self, x):
+        features = []
+        for layer in self.hidden_layers:
+            x = layer(x)
+            if self.return_features:
+                features.append(x)
+        out = self.output_layer(x)
+        return (out, features) if self.return_features else out
+
     
+class BGANWithBN(BGAN):
+    def __init__(self, epochs, batch_norm=True):
+        # Initialize base attributes before super().__init__
+        self._embedding_dim = 256
+        self.use_bn = batch_norm
+        self.bn_structure = None
+        self._model_built = False  # Add flag to prevent model rebuilding
+        
+        # Call super().__init__ with minimal parameters
+        super().__init__(embedding_dim=self._embedding_dim, epochs=epochs)
 
-    # Example dataset
-    data = pd.read_csv("http://ctgan-demo.s3.amazonaws.com/census.csv.gz")  
-    discrete_columns = data.select_dtypes(include=['object', 'category']).columns.tolist()
+    def _build_model(self, data, discrete_columns):
+        """Override to ensure we use our custom generator"""
+        if self._model_built:
+            return
 
-    # Encode categorical values
-    le_dict = {}
-    for col in discrete_columns:
-        le = LabelEncoder()
-        data[col] = le.fit_transform(data[col].astype(str))
-        le_dict[col] = le
+        # First build transformer to get data dimensions
+        self._transformer = DataTransformer()
+        self._transformer.fit(data, discrete_columns)
+        
+        self._data_dim = self._transformer.output_dimensions
+        if self._data_dim is None:
+            self._data_dim = data.shape[1]
+            print(f"Warning: Using fallback data dimension: {self._data_dim}")
 
-    # Define output_info
-    output_info = [ColumnInfo(dim=1, activation_fn='softmax' if col in discrete_columns else 'tanh') for col in data.columns]
+        print("Building BN-enhanced generator...")
+        self._generator = GeneratorWithBN(
+            input_dim=self._embedding_dim,
+            output_dim=self._data_dim,
+            hidden_dims=[512, 512],
+            bn_structure=self.bn_structure if self.use_bn else None,
+        )
+        self._discriminator = DiscriminatorWithBN(
+            input_dim=self._data_dim,
+            hidden_dims=[512, 512]
+        )
+        
+        self._model_built = True
 
-    # Define Bayesian Network structure
-    bn_structure = {
-        0: {'parents': []},
-        1: {'parents': [0]},
-        2: {'parents': [1]},
-        3: {'parents': [2]},
-        4: {'parents': [3]},
-    }
+    def fit(self, data, discrete_columns):
+        """Ensure model is built before training"""
+        if not self._model_built:
+            self._build_model(data, discrete_columns)
+        return super().fit(data, discrete_columns)
+    
+class BN_AUG_SDG:
+    def __init__(self, epochs=100, batch_norm=True, embedding_dim=256, bn_influence=0.1):
+        self.epochs = epochs
+        self.batch_norm = batch_norm
+        self.embedding_dim = embedding_dim
+        self.bn_influence = bn_influence
 
-    # Initialize the pipeline
-    pipeline = BayesianGANPipeline(
-        data=data,
-        output_info=output_info,
-        bn_structure=bn_structure,
-        discrete_columns=discrete_columns,
-        epochs=50,
-        batch_size=256
-    )
+        self.bgan = BGAN(
+            epochs = epochs,
+            bn_influence = bn_influence,
+        )
+        self.bn_structure = None
+        self.node_importance = {}
 
-    # Train the Bayesian GAN
-    pipeline.train()
+    def _calculate_mutual_information(self, x, y):
+        if x.dtype == 'object' or y.dtype == 'object':
+            x = LabelEncoder().fit_transform(x)
+            y = LabelEncoder().fit_transform(y)
+        return mutual_info_score(x, y)
 
-    # Generate synthetic data
-    synthetic_data = pipeline.generate_synthetic_data(num_samples=1000)
+    def learn_bn_structure(self, data):
+        """Learn a Bayesian Network structure using mutual information-based weights."""
+        estimator = HillClimbSearch(data)
+        model = estimator.estimate(scoring_method=BIC(data), max_iter=50, epsilon=1e-4)
 
-    # Initialize BayesianGANInference
-    f = lambda x: x  # Example forward model
-    sigma_noise = np.eye(data.shape[1]) * 0.1
-    inference = BayesianGANInference(
-        generator=pipeline.bgan._generator,
-        data_sampler_bn=pipeline.data_sampler,
-        f=f,
-        sigma_noise=sigma_noise
-    )
+        self.bn_structure = {}
+        raw_weights = {}
 
-    # Perform inference tasks
-    y_hat = np.random.rand(data.shape[1])  # Example observation
-    mc_expectation = inference.monte_carlo_expectation(y_hat, l_func=lambda x: x)
-    print("Monte Carlo Expectation:", mc_expectation)
+        for parent, child in model.edges():
+            if child not in self.bn_structure:
+                self.bn_structure[child] = []
+                raw_weights[child] = []
 
-    # Visualize synthetic vs real data
-    plotter = DataComparisonPlotter(real_data=data, synthetic_data=synthetic_data)
-    plotter.plot_distributions()     # Histograms/KDEs
-    plotter.plot_tsne()              # t-SNE visualization
+            self.bn_structure[child].append(parent)
+            score = self._calculate_mutual_information(data[parent], data[child])
+            raw_weights[child].append(score)
 
-    # Evaluate synthetic data accuracy
-    for col in discrete_columns:
-        real_col = le_dict[col].inverse_transform(data[col])
-        synthetic_col = le_dict[col].inverse_transform(synthetic_data[col].astype(int))
-        acc = accuracy_score(real_col, synthetic_col)
-        print(f"Accuracy for column {col}: {acc:.4f}")
+        # Normalize weights
+        for node, weights in raw_weights.items():
+            norm_weights = np.array(weights) / np.sum(weights)
+            self.node_importance[node] = {
+                parent: float(w) for parent, w in zip(self.bn_structure[node], norm_weights)
+            }
 
-    # Evaluate numerical columns using MSE
-    numerical_columns = [col for col in data.columns if col not in discrete_columns]
-    for col in numerical_columns:
-        mse = mean_squared_error(data[col], synthetic_data[col])
-        print(f"Mean Squared Error for column {col}: {mse:.4f}")
+        # Construct final weighted BN structure
+        weighted_structure = {
+            node: [(parent, self.node_importance[node][parent]) for parent in parents]
+            for node, parents in self.bn_structure.items()
+        }
+
+        print("Learned Bayesian Network structure with weighted edges:")
+        for node, edges in weighted_structure.items():
+            print(f"  {node}: {[f'{p} ({w:.2f})' for p, w in edges]}")
+
+        return weighted_structure
+
+    def sample_conditionally(self, X: pd.DataFrame, missing_mask: pd.DataFrame) -> pd.DataFrame:
+        n_samples = X.shape[0]
+        device = self.bgan._device
+        embedding_dim = self.bgan._embedding_dim
+
+        # Generate random noise for the generator
+        noise = torch.randn(n_samples, embedding_dim, device=device)
+
+        self.bgan._generator.eval()
+        with torch.no_grad():
+            gen_output = self.bgan._generator(noise)
+            if isinstance(gen_output, tuple):
+                gen_output = gen_output[0]  # If generator returns (data, uncertainty, ...)
+
+        # Transform original data for inverse_transform
+        transformed = self.bgan._transformer.transform(X)
+        output_np = transformed.copy()
+        gen_np = gen_output.cpu().numpy()
+
+        # --- Fix: Build mask in transformed space ---
+        # All locations that were originally missing in X will be missing in transformed as well (set to 0 or nan)
+        # So, use np.isnan(transformed) as the mask
+        transformed_mask = np.isnan(transformed)
+
+        # Replace only missing entries in transformed space
+        combined = np.where(transformed_mask, gen_np, output_np)
+        return self.bgan._transformer.inverse_transform(combined)
+
+
+    def fit(self, data: pd.DataFrame, discrete_columns: list):
+        # Learn BN structure and initialize BGAN
+        weighted_bn = self.learn_bn_structure(data)
+
+        self.bgan = BGANWithBN(epochs=self.epochs, batch_norm=self.batch_norm)
+        self.bgan.bn_structure = weighted_bn
+        self.bgan.fit(data, discrete_columns)
+
+    def sample(self, n: int) -> pd.DataFrame:
+        if self.bgan is None:
+            raise RuntimeError("Model not trained. Call `fit` first.")
+        return self.bgan.sample(n)
+
+    def get_gate_log(self):
+        if not self.bgan or not hasattr(self.bgan, '_generator'):
+            raise AttributeError("BGAN model not initialized or trained yet.")
+        
+        gen = self.bgan._generator
+        if hasattr(gen, 'gate_log'):
+            return gen.gate_log
+        else:
+            raise AttributeError("Gate log not found in generator.")

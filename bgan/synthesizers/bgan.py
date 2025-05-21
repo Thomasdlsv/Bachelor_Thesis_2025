@@ -37,7 +37,20 @@ class Discriminator(nn.Module):
             dim = item
 
         self.seq = nn.ModuleList(layers)
-        self.hidden = nn.Sequential(*layers)
+        # Improved Discriminator
+        self.hidden = nn.Sequential(
+            nn.Linear(input_dim * pac, discriminator_dim[0]),
+            nn.LeakyReLU(0.2),
+            #nn.BatchNorm1d(discriminator_dim[0]),
+            nn.Dropout(p=dropout_prob),
+            *[nn.Sequential(
+                nn.Linear(in_dim, out_dim),
+                nn.LeakyReLU(0.2),
+                #nn.BatchNorm1d(out_dim),
+                nn.Dropout(p=dropout_prob)
+            ) for in_dim, out_dim in zip(discriminator_dim[:-1], discriminator_dim[1:])],
+        )
+
         self.output_layer = nn.Linear(dim, 1)
 
     def forward(self, x):
@@ -48,45 +61,39 @@ class Discriminator(nn.Module):
         h = self.hidden(x)
         return self.output_layer(h)
 
+    # Optimized calc_gradient_penalty
     def calc_gradient_penalty(self, real_data, fake_data, device, pac):
-        alpha = torch.rand(real_data.size(0), 1, device=device)
-        alpha = alpha.expand(real_data.size())
-
+        alpha = torch.rand(real_data.size(0), 1, device=device).expand(real_data.size())
         interpolates = alpha * real_data + ((1 - alpha) * fake_data)
-        interpolates = interpolates.requires_grad_(True)
-
+        interpolates.requires_grad_(True)
+        
         disc_interpolates = self(interpolates)
-
+        
         gradients = torch.autograd.grad(
-            outputs=disc_interpolates,
-            inputs=interpolates,
-            grad_outputs=torch.ones_like(disc_interpolates),
-            create_graph=True,
-            retain_graph=True,
-            only_inputs=True,
-        )[0]
-
+            outputs=disc_interpolates, inputs=interpolates,
+            grad_outputs=torch.ones_like(disc_interpolates), create_graph=True,
+            retain_graph=True, only_inputs=True)[0]
+        
         gradients = gradients.view(gradients.size(0), -1)
-        gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
-        return gradient_penalty
+        penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
+        return penalty
 
 
+class ResidualBlock(nn.Module):
+    def __init__(self, in_dim, out_dim):
+        super().__init__()
+        self.fc1 = nn.Linear(in_dim, out_dim)
+        self.bn1 = nn.BatchNorm1d(out_dim)
+        self.act1 = nn.LeakyReLU(0.2)
+        self.fc2 = nn.Linear(out_dim, out_dim)
+        self.bn2 = nn.BatchNorm1d(out_dim)
+        self.act2 = nn.LeakyReLU(0.2)
+        self.skip = nn.Linear(in_dim, out_dim) if in_dim != out_dim else nn.Identity()
 
-class Residual(Module):
-    """Residual layer for the BGAN."""
-
-    def __init__(self, i, o):
-        super(Residual, self).__init__()
-        self.fc = Linear(i, o)
-        self.bn = BatchNorm1d(o)
-        self.relu = ReLU()
-
-    def forward(self, input_):
-        """Apply the Residual layer to the `input_`."""
-        out = self.fc(input_)
-        out = self.bn(out)
-        out = self.relu(out)
-        return torch.cat([out, input_], dim=1)
+    def forward(self, x):
+        out = self.act1(self.bn1(self.fc1(x)))
+        out = self.act2(self.bn2(self.fc2(out)))
+        return out + self.skip(x)
 
 '''
 The generator outputs both the mean and log-variance (for uncertainty) of the latent space, 
@@ -95,47 +102,67 @@ and an uncertainty map that estimates aleatoric uncertainty
 '''
 
 class Generator(nn.Module):
-    """Generator for the BGAN with aleatoric uncertainty."""
+    def __init__(self, embedding_dim, generator_dim, data_dim, bn_structure=None, bn_influence = 0.1):
+        super().__init__()
+        self.embedding_dim = int(embedding_dim)
+        self.data_dim = int(data_dim)
+        self.bn_structure = bn_structure
+        self.bn_influence = bn_influence
 
-    def __init__(self, embedding_dim, generator_dim, data_dim):
-        super(Generator, self).__init__()
-        
-        self.embedding_dim = embedding_dim
-        self.generator_dim = generator_dim
-        self.data_dim = data_dim
-
-        layers = []
-        dim = embedding_dim
-        for item in generator_dim:
-            layers.append(nn.Linear(dim, item))
-            layers.append(nn.BatchNorm1d(item))  # Count: 2
-            layers.append(nn.ReLU())
+        # Standard generator backbone
+        dim = self.embedding_dim
+        seq = []
+        for item in list(generator_dim):
+            seq += [
+                nn.Linear(dim, item),
+                nn.LayerNorm(item),
+                nn.LeakyReLU(0.2)
+            ]
             dim = item
-
-        layers.append(nn.Linear(dim, data_dim))  # Count: +1 (final layer)
-
-        self.hidden = nn.Sequential(*layers[:-1])
-        self.seq = nn.ModuleList(layers)
-
-        # Split output layers
-        self.out_mean_logvar = nn.Linear(dim, data_dim * 2)
+        self.hidden = nn.Sequential(*seq)
+         # Separate outputs for mean, log_var, and uncertainty
+        self.mean_layer = nn.Linear(dim, self.data_dim)
+        self.log_var_layer = nn.Linear(dim, self.data_dim)
         self.uncertainty_layer = nn.Sequential(
-            nn.Linear(dim, data_dim),
+            nn.Linear(dim, self.data_dim),
             nn.Softplus()
         )
 
+        # Optional: BN-guided soft guidance
+        if bn_structure:
+            self.bn_transforms = nn.ModuleDict()
+            for node, parents in bn_structure.items():
+                if parents:
+                    # Create a linear layer to transform the parents' embeddings
+                    self.bn_transforms[node] = nn.Linear(
+                        len(parents) * embedding_dim, embedding_dim
+                    )
+        else:
+            self.bn_transforms = None
+
+
     def forward(self, z):
+        # Soft BN guidance: transform parents' embeddings and add to node's embedding
+        if self.bn_structure and self.bn_transforms is not None:
+            for node, parents in self.bn_structure.items():
+                if parents:
+                    # Concatenate parents' embeddings
+                    parent_embeddings = torch.cat([z[:, i] for i in parents], dim=1)
+                    # Transform parents' embeddings
+                    transformed_embeddings = self.bn_transforms[node](parent_embeddings)
+                    # Add transformed embeddings to node's embedding
+                    #CHANGE THE CONSTANT HERE TO IMPACT THE INFLUENCE OF THE INFLUENCE EMBEDDING ON THE NODE'S ORIGINAL EMBEDDING
+                    z[:, node] = z[:, node] + self.bn_influence * transformed_embeddings
+
         h = self.hidden(z)
-
-        out = self.out_mean_logvar(h)
-        mean, log_var = torch.chunk(out, 2, dim=1)
-
+        # Generate mean and log_var
+        mean = self.mean_layer(h)
+        log_var = self.log_var_layer(h)
         std = torch.exp(0.5 * log_var)
-        epsilon = torch.randn_like(std)
-        sampled = mean + std * epsilon
-
-        uncertainty_map = self.uncertainty_layer(h)
-        return sampled, uncertainty_map
+        eps = torch.randn_like(std)
+        sampled = mean + std * eps
+        uncertainty = self.uncertainty_layer(h)
+        return sampled, uncertainty, (mean, log_var)
 
 
 
@@ -191,24 +218,33 @@ class BGAN(BaseSynthesizer):
         embedding_dim=128,
         generator_dim=(256, 256),
         discriminator_dim=(256, 256),
-        generator_lr=2e-4,
-        generator_decay=1e-6,
-        discriminator_lr=2e-4,
-        discriminator_decay=1e-6,
-        batch_size=500,
-        discriminator_steps=1,
+        generator_lr=0.0002,
+        generator_decay=0.000001,
+        discriminator_lr=0.0002,
+        discriminator_decay=0.000001,
+        batch_size=200,
+        discriminator_steps=5,
         log_frequency=True,
         verbose=False,
-        epochs=300,
+        epochs=50,
         pac=10,
         cuda=True,
-        beta=1e-3  # control uncertainty loss weight
+        beta=1e-3,  # control uncertainty loss weight
+        bn_structure=None,
+        kl_weight=1e-3,  # KL divergence weight
+        bn_influence = 0.1,
     ):
         assert batch_size % 2 == 0
+        super().__init__()
+        #self.embedding_dim = embedding_dim
+        self.bn_structure = bn_structure
 
-        self._embedding_dim = embedding_dim
+        self.bn_influence = bn_influence
+
+        #self._embedding_dim = embedding_dim
          # Convert dimensions to lists
         self._embedding_dim = embedding_dim
+        #self.bn_structure = bn_structure
         self._generator_dim = (
             generator_dim if isinstance(generator_dim, list) 
             else list(generator_dim) if isinstance(generator_dim, tuple)
@@ -231,8 +267,10 @@ class BGAN(BaseSynthesizer):
         self._verbose = verbose
         self._epochs = epochs
         self.pac = pac
+        self._kl_weight = kl_weight  # KL divergence weight
 
         self._beta = beta  # we init the beta here
+        
 
 
         if not cuda or not torch.cuda.is_available():
@@ -248,6 +286,10 @@ class BGAN(BaseSynthesizer):
         self._data_sampler = None
         self._generator = None
         self.loss_values = None
+
+    def _kl_divergence(self, mean, log_var):
+        """Compute KL divergence between N(mean, std) and N(0, 1)"""
+        return -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp(), dim=1).mean()
 
     @staticmethod
     def _gumbel_softmax(logits, tau=1, hard=False, eps=1e-10, dim=-1):
@@ -375,178 +417,199 @@ class BGAN(BaseSynthesizer):
                 'Please remove all null values from your continuous training data.'
             )
 
-    @random_state
-    def fit(self, train_data, discrete_columns=(), epochs=None):
-        self._validate_discrete_columns(train_data, discrete_columns)
-        self._validate_null_data(train_data, discrete_columns)
+    def fit(self, train_data, discrete_columns=(), epochs=None, bn_structure=None):
+            # Validate columns and data
+            self._validate_discrete_columns(train_data, discrete_columns)
+            self._validate_null_data(train_data, discrete_columns)
 
-        if epochs is None:
-            epochs = self._epochs
-        else:
-            warnings.warn(
-                '`epochs` argument in `fit` method has been deprecated and will be removed '
-                'in a future version. Please pass `epochs` to the constructor instead',
-                DeprecationWarning,
+            if epochs is None:
+                epochs = self._epochs
+            else:
+                warnings.warn(
+                    '`epochs` argument in `fit` method has been deprecated and will be removed '
+                    'in a future version. Please pass `epochs` to the constructor instead',
+                    DeprecationWarning,
+                )
+
+            # Data Transformation and Sampling
+            self._transformer = DataTransformer()
+            self._transformer.fit(train_data, discrete_columns)
+            train_data = self._transformer.transform(train_data)
+
+            self._data_sampler = DataSampler(
+                train_data, self._transformer.output_info_list, self._log_frequency
             )
 
-        self._transformer = DataTransformer()
-        self._transformer.fit(train_data, discrete_columns)
-        train_data = self._transformer.transform(train_data)
+            data_dim = self._transformer.output_dimensions
+            cond_dim = self._data_sampler.dim_cond_vec()
 
-        self._data_sampler = DataSampler(
-            train_data, self._transformer.output_info_list, self._log_frequency
-        )
+            # Initialize Generator and Discriminator
+            self._generator = Generator(
+                self._embedding_dim + cond_dim,
+                self._generator_dim,
+                data_dim,
+                bn_structure=bn_structure,
+                bn_influence = self.bn_influence
+            ).to(self._device)
 
-        data_dim = self._transformer.output_dimensions
-        cond_dim = self._data_sampler.dim_cond_vec()
+            self._discriminator = Discriminator(
+                data_dim + cond_dim,
+                self._discriminator_dim,
+                pac=self.pac
+            ).to(self._device)
 
-        self._generator = Generator(
-            self._embedding_dim + cond_dim,
-            self._generator_dim,
-            data_dim
-        ).to(self._device)
+            # Optimizers for Generator and Discriminator
+            optimizerG = optim.Adam(
+                self._generator.parameters(),
+                lr=self._generator_lr,
+                betas=(0.5, 0.9),
+                weight_decay=self._generator_decay,
+            )
 
-        discriminator = Discriminator(
-            data_dim + cond_dim,
-            self._discriminator_dim,
-            pac=self.pac
-        ).to(self._device)
+            optimizerD = optim.Adam(
+                self._discriminator.parameters(),
+                lr=self._discriminator_lr,
+                betas=(0.5, 0.9),
+                weight_decay=self._discriminator_decay,
+            )
 
-        optimizerG = optim.Adam(
-            self._generator.parameters(),
-            lr=self._generator_lr,
-            betas=(0.5, 0.9),
-            weight_decay=self._generator_decay,
-        )
+            embedding_dim = self._embedding_dim
+            batch_size = self._batch_size
+            mean = torch.zeros(batch_size, embedding_dim, device=self._device)
+            std = torch.ones(batch_size, embedding_dim, device=self._device)  # Use ones instead of mean + 1
+            kl_anneal_epochs = 15  # you can tune this
 
-        optimizerD = optim.Adam(
-            discriminator.parameters(),
-            lr=self._discriminator_lr,
-            betas=(0.5, 0.9),
-            weight_decay=self._discriminator_decay,
-        )
 
-        mean = torch.zeros(self._batch_size, self._embedding_dim, device=self._device)
-        std = mean + 1
+            # Initialize loss values dataframe
+            self.loss_values = pd.DataFrame({
+                'Epoch': pd.Series(dtype='int64'),
+                'Generator Loss': pd.Series(dtype='float64'),
+                'Discriminator Loss': pd.Series(dtype='float64')
+            })
 
-    # Initialize loss_values with correct dtype
-        self.loss_values = pd.DataFrame({
-            'Epoch': pd.Series(dtype='int64'),
-            'Generator Loss': pd.Series(dtype='float64'),
-            'Discriminator Loss': pd.Series(dtype='float64')
-        })
+            # Loop over epochs
+            epoch_iterator = tqdm(range(epochs), disable=(not self._verbose))
+            if self._verbose:
+                description = 'Gen. ({gen:.2f}) | Discrim. ({dis:.2f})'
+                epoch_iterator.set_description(description.format(gen=0, dis=0))
 
-        epoch_iterator = tqdm(range(epochs), disable=(not self._verbose))
-        if self._verbose:
-            description = 'Gen. ({gen:.2f}) | Discrim. ({dis:.2f})'
-            epoch_iterator.set_description(description.format(gen=0, dis=0))
+            steps_per_epoch = max(len(train_data) // self._batch_size, 1)
 
-        steps_per_epoch = max(len(train_data) // self._batch_size, 1)
+            for i in epoch_iterator:
+                for _ in range(steps_per_epoch):
+                    # === Train Discriminator ===
+                    for _ in range(self._discriminator_steps):
+                        condvec = self._data_sampler.sample_condvec(self._batch_size)
+                        if condvec is None:
+                            noise_dim = self._embedding_dim
+                        else:
+                            c1, m1, col, opt = condvec
+                            noise_dim = self._embedding_dim + cond_dim
+                        mean = torch.zeros(self._batch_size, noise_dim, device=self._device)
+                        std = torch.ones(self._batch_size, noise_dim, device=self._device)
+                        fakez = torch.normal(mean=mean, std=std)
 
-        for i in epoch_iterator:
-            for _ in range(steps_per_epoch):
-                # Train Discriminator
-                for _ in range(self._discriminator_steps):
+                        if condvec is None:
+                            c1, m1, col, opt = None, None, None, None
+                            real = self._data_sampler.sample_data(train_data, self._batch_size, col, opt)
+                        else:
+                            c1, m1, col, opt = condvec
+                            c1 = torch.from_numpy(c1).to(self._device)
+                            m1 = torch.from_numpy(m1).to(self._device)
+                            # fakez already has correct shape, so no need to concatenate c1 again
+
+                            perm = np.arange(self._batch_size)
+                            np.random.shuffle(perm)
+                            real = self._data_sampler.sample_data(
+                                train_data, self._batch_size, col[perm], opt[perm]
+                            )
+                            c2 = c1[perm]
+
+                        fake, uncertainty_map, _ = self._generator(fakez)  # Ignore mean/log_var for discriminator
+                        fakeact = self._apply_activate(fake)
+                        real = torch.from_numpy(real.astype('float32')).to(self._device)
+
+                        if c1 is not None:
+                            fake_cat = torch.cat([fakeact, c1], dim=1)
+                            real_cat = torch.cat([real, c2], dim=1)
+                        else:
+                            real_cat = real
+                            fake_cat = fakeact
+
+                        y_fake = self._discriminator(fake_cat)
+                        y_real = self._discriminator(real_cat)
+
+                        pen = self._discriminator.calc_gradient_penalty(
+                            real_cat, fake_cat, self._device, self.pac
+                        )
+                        loss_d = -(torch.mean(y_real) - torch.mean(y_fake))
+
+                        optimizerD.zero_grad(set_to_none=False)
+                        pen.backward(retain_graph=True)
+                        loss_d.backward()
+                        optimizerD.step()
+
+                    # Train Generator
                     fakez = torch.normal(mean=mean, std=std)
                     condvec = self._data_sampler.sample_condvec(self._batch_size)
 
                     if condvec is None:
                         c1, m1, col, opt = None, None, None, None
-                        real = self._data_sampler.sample_data(train_data, self._batch_size, col, opt)
                     else:
-                        # Ensure condvec is a tuple with the expected format
-                        
                         c1, m1, col, opt = condvec
                         c1 = torch.from_numpy(c1).to(self._device)
                         m1 = torch.from_numpy(m1).to(self._device)
-                        fakez = torch.cat([fakez, c1], dim=1)
+                        # Do NOT concatenate c1 to fakez here
 
-                        perm = np.arange(self._batch_size)
-                        np.random.shuffle(perm)
-                        real = self._data_sampler.sample_data(
-                            train_data, self._batch_size, col[perm], opt[perm]
-                        )
-                        c2 = c1[perm]
-
-                    fake, _ = self._generator(fakez)
+                    fake, uncertainty_map, (mean, log_var) = self._generator(fakez)  # Unpack all outputs
                     fakeact = self._apply_activate(fake)
-                    real = torch.from_numpy(real.astype('float32')).to(self._device)
+
+                     # Calculate KL divergence
+                    kl_loss = self._kl_divergence(mean, log_var)
+                    kl_annealed_weight = self._kl_weight * min(1.0, i / kl_anneal_epochs)
 
                     if c1 is not None:
-                        fake_cat = torch.cat([fakeact, c1], dim=1)
-                        real_cat = torch.cat([real, c2], dim=1)
+                        y_fake = self._discriminator(torch.cat([fakeact, c1], dim=1))
                     else:
-                        real_cat = real
-                        fake_cat = fakeact
+                        y_fake = self._discriminator(fakeact)
 
-                    y_fake = discriminator(fake_cat)
-                    y_real = discriminator(real_cat)
+                    cross_entropy = 0 if condvec is None else self._cond_loss(fake, c1, m1)
 
-                    pen = discriminator.calc_gradient_penalty(
-                        real_cat, fake_cat, self._device, self.pac
-                    )
-                    loss_d = -(torch.mean(y_real) - torch.mean(y_fake))
+                    uncertainty_loss = torch.mean(torch.log(uncertainty_map ** 2 + 1e-8))  # avoid log(0)
 
-                    optimizerD.zero_grad(set_to_none=False)
-                    pen.backward(retain_graph=True)
-                    loss_d.backward()
-                    optimizerD.step()
+                    #kl_annealed_weight = self._kl_weight * min(1.0, i / kl_anneal_epochs)
+                    loss_g = -torch.mean(y_fake) + cross_entropy + self._beta * uncertainty_loss + kl_annealed_weight * kl_loss
 
-                # Train Generator
-                fakez = torch.normal(mean=mean, std=std)
-                condvec = self._data_sampler.sample_condvec(self._batch_size)
 
-                if condvec is None:
-                    c1, m1, col, opt = None, None, None, None
-                else:
-                    # Ensure condvec is a tuple with the expected format
-                    
-                    c1, m1, col, opt = condvec
-                    c1 = torch.from_numpy(c1).to(self._device)
-                    m1 = torch.from_numpy(m1).to(self._device)
-                    fakez = torch.cat([fakez, c1], dim=1)
+                    optimizerG.zero_grad(set_to_none=False)
+                    loss_g.backward()
+                    optimizerG.step()
 
-                fake, uncertainty_map = self._generator(fakez)
-                fakeact = self._apply_activate(fake)
+                # Record and print epoch stats
+                generator_loss = loss_g.detach().cpu().item()
+                discriminator_loss = loss_d.detach().cpu().item()
 
-                if c1 is not None:
-                    y_fake = discriminator(torch.cat([fakeact, c1], dim=1))
-                else:
-                    y_fake = discriminator(fakeact)
+                # Update loss values
+                epoch_loss_df = pd.DataFrame({
+                    'Epoch': pd.Series([i], dtype='int64'),
+                    'Generator Loss': [generator_loss],
+                    'Discriminator Loss': [discriminator_loss],
+                })
 
-                cross_entropy = 0 if condvec is None else self._cond_loss(fake, c1, m1)
-
-                epsilon = 1e-8
-                uncertainty_loss = torch.mean(torch.log(uncertainty_map ** 2 + epsilon))
-
-                loss_g = -torch.mean(y_fake) + cross_entropy + self._beta * uncertainty_loss
-
-                optimizerG.zero_grad(set_to_none=False)
-                loss_g.backward()
-                optimizerG.step()
-
-            # Record and print epoch stats
-            generator_loss = loss_g.detach().cpu().item()
-            discriminator_loss = loss_d.detach().cpu().item()
-
-            # Update epoch_loss_df creation
-            epoch_loss_df = pd.DataFrame({
-                'Epoch': pd.Series([i], dtype='int64'),
-                'Generator Loss': [generator_loss],
-                'Discriminator Loss': [discriminator_loss],
-            })
-
-            # Concatenate with dtype preservation
-            self.loss_values = pd.concat(
-                [self.loss_values, epoch_loss_df],
-                ignore_index=True
-            )
-
-            if self._verbose:
-                epoch_iterator.set_description(
-                    description.format(gen=generator_loss, dis=discriminator_loss)
+                self.loss_values = pd.concat(
+                    [self.loss_values, epoch_loss_df],
+                    ignore_index=True
                 )
 
+                if self._verbose:
+                    epoch_iterator.set_description(
+                        description.format(gen=generator_loss, dis=discriminator_loss)
+                    )
+
+            self.generator = self._generator
+            self.transformer = self._transformer
+            self.data_sampler = self._data_sampler
+            self.embedding_dim = self._embedding_dim
 
     @random_state
     def sample(self, n, condition_column=None, condition_value=None):
@@ -610,3 +673,12 @@ class BGAN(BaseSynthesizer):
         self._device = device
         if self._generator is not None:
             self._generator.to(self._device)
+
+    def get_discriminator(self):
+        return self._discriminator
+    
+    def eval(self):
+        if self._generator:
+            self._generator.eval()
+        if self._discriminator:
+            self._discriminator.eval()
