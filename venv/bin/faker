@@ -1,4 +1,4 @@
-#!/Users/thomasdls/Documents/GitHub/Bachelor_Thesis_2025/venv/bin/python
+#!/Users/thomasdls/Documents/GitHub/Bachelor_Thesis_2025/venv/bin/python3
 # -*- coding: utf-8 -*-
 import re
 import sys

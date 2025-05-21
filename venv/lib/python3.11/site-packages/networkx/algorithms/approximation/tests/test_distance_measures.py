@@ -1,4 +1,5 @@
-"""Unit tests for the :mod:`networkx.algorithms.approximation.distance_measures` module."""
+"""Unit tests for the :mod:`networkx.algorithms.approximation.distance_measures` module.
+"""
 
 import pytest
 

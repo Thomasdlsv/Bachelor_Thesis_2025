@@ -1,15 +1,33 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="bgan",
+    name="bachelor_thesis_2025",
     version="0.1.0",
-    packages=find_packages(include=['bgan', 'bgan.*', 'ResearchQuestions', 'ResearchQuestions.*', 'bayesian_network', 'bayesian_network.*']),      
-    python_requires=">=3.6",
+    packages=[
+        "bayesian_network",
+        "bayesian_network.*",
+        "bgan",
+        "bgan.*",
+        "imputation",
+        "imputation.*",
+        "ResearchQuestions",
+        "ResearchQuestions.*",
+        "bgain",
+        "bgain.*"
+    ],
     install_requires=[
-        "numpy>=2.0.2",
-        "pandas>=2.2.3",
-        "rdt>=1.15.0",
-        "torch>=2.6.0",
-        "tqdm>=4.67.1",
-    ]
+        "numpy>=1.21.0",
+        "pandas>=1.3.0",
+        "torch>=1.9.0",
+        "scikit-learn>=0.24.2",
+        "matplotlib>=3.4.0",
+        "seaborn>=0.11.2",
+        "scipy>=1.7.0",
+        "ctgan>=0.7.0",
+        "pgmpy>=0.1.20",
+        "networkx>=2.6.0"
+    ],
+    python_requires='>=3.8',
+    author="Thomas",
+    description="Synthetic Data Generation Research",
 )

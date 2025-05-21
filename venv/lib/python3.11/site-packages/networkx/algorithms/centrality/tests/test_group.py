@@ -2,6 +2,7 @@
 Tests for Group Centrality Measures
 """
 
+
 import pytest
 
 import networkx as nx
