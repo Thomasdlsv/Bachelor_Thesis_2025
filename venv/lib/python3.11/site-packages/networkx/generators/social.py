@@ -1,7 +1,6 @@
 """
 Famous social networks.
 """
-
 import networkx as nx
 
 __all__ = [
@@ -12,7 +11,6 @@ __all__ = [
 ]
 
 
-@nx._dispatchable(graphs=None, returns_graph=True)
 def karate_club_graph():
     """Returns Zachary's Karate Club graph.
 
@@ -20,13 +18,6 @@ def karate_club_graph():
     indicates the name of the club to which the member represented by that node
     belongs, either 'Mr. Hi' or 'Officer'. Each edge has a weight based on the
     number of contexts in which that edge's incident node members interacted.
-
-    The dataset is derived from the 'Club After Split From Data' column of Table 3 in [1]_.
-    This was in turn derived from the 'Club After Fission' column of Table 1 in the
-    same paper. Note that the nodes are 0-indexed in NetworkX, but 1-indexed in the
-    paper (the 'Individual Number in Matrix C' column of Table 3 starts at 1). This
-    means, for example, that ``G.nodes[9]["club"]`` returns 'Officer', which
-    corresponds to row 10 of Table 3 in the paper.
 
     Examples
     --------
@@ -101,7 +92,6 @@ def karate_club_graph():
     return G
 
 
-@nx._dispatchable(graphs=None, returns_graph=True)
 def davis_southern_women_graph():
     """Returns Davis Southern women social network.
 
@@ -252,7 +242,6 @@ def davis_southern_women_graph():
     return G
 
 
-@nx._dispatchable(graphs=None, returns_graph=True)
 def florentine_families_graph():
     """Returns Florentine families graph.
 
@@ -286,7 +275,6 @@ def florentine_families_graph():
     return G
 
 
-@nx._dispatchable(graphs=None, returns_graph=True)
 def les_miserables_graph():
     """Returns coappearance network of characters in the novel Les Miserables.
 

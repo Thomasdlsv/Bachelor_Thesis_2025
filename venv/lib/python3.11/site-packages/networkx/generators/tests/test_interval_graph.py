@@ -1,5 +1,6 @@
-"""Unit tests for the :mod:`networkx.generators.interval_graph` module."""
+"""Unit tests for the :mod:`networkx.generators.interval_graph` module.
 
+"""
 import math
 
 import pytest

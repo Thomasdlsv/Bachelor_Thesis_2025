@@ -1,9 +1,7 @@
 """
 Generators for the small graph atlas.
 """
-
 import gzip
-import importlib.resources
 import os
 import os.path
 from itertools import islice
@@ -17,6 +15,9 @@ __all__ = ["graph_atlas", "graph_atlas_g"]
 #: The graphs are labeled starting from 0 and extending to (but not
 #: including) this number.
 NUM_GRAPHS = 1253
+
+#: The absolute path representing the directory containing this file.
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 #: The path to the data file containing the graph edge lists.
 #:
@@ -50,9 +51,7 @@ NUM_GRAPHS = 1253
 #:             f.write(bytes(f'NODES {len(G)}\n', encoding='utf-8'))
 #:             write_edgelist(G, f, data=False)
 #:
-
-# Path to the atlas file
-ATLAS_FILE = importlib.resources.files("networkx.generators") / "atlas.dat.gz"
+ATLAS_FILE = os.path.join(THIS_DIR, "atlas.dat.gz")
 
 
 def _generate_graphs():
@@ -89,7 +88,6 @@ def _generate_graphs():
             yield G
 
 
-@nx._dispatchable(graphs=None, returns_graph=True)
 def graph_atlas(i):
     """Returns graph number `i` from the Graph Atlas.
 
@@ -128,7 +126,6 @@ def graph_atlas(i):
     return next(islice(_generate_graphs(), i, None))
 
 
-@nx._dispatchable(graphs=None, returns_graph=True)
 def graph_atlas_g():
     """Returns the list of all graphs with up to seven nodes named in the
     Graph Atlas.

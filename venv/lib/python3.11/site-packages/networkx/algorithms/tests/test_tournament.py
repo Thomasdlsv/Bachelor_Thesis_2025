@@ -1,5 +1,4 @@
 """Unit tests for the :mod:`networkx.algorithms.tournament` module."""
-
 from itertools import combinations
 
 import pytest

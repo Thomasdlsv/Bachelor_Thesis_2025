@@ -12,6 +12,8 @@ import torch.nn as nn
 from pgmpy.estimators import HillClimbSearch
 from pgmpy.estimators import BIC
 from scipy.stats import wasserstein_distance
+import networkx as nx
+import matplotlib.pyplot as plt
 
 # Refactor Generator with Batch Normalization
 class GeneratorWithBN(nn.Module):
@@ -171,15 +173,31 @@ class DiscriminatorWithBN(nn.Module):
 
     
 class BGANWithBN(BGAN):
-    def __init__(self, epochs, batch_norm=True):
+    def __init__(self, epochs, batch_norm=True, optimizer_type="adam", use_uncertainty_loss=True,
+        use_kl_loss=True,
+        bn_influence=0.1,
+        embedding_dim=256,
+        **kwargs):
         # Initialize base attributes before super().__init__
-        self._embedding_dim = 256
+        self._embedding_dim = embedding_dim
         self.use_bn = batch_norm
         self.bn_structure = None
-        self._model_built = False  # Add flag to prevent model rebuilding
+        self._model_built = False
+        self.optimizer_type = optimizer_type
+        self.use_uncertainty_loss = use_uncertainty_loss
+        self.use_kl_loss = use_kl_loss
+        self.bn_influence = bn_influence
+
         
-        # Call super().__init__ with minimal parameters
-        super().__init__(embedding_dim=self._embedding_dim, epochs=epochs)
+        super().__init__(
+            embedding_dim=self._embedding_dim,
+            epochs=epochs,
+            optimizer_type=optimizer_type,
+            use_uncertainty_loss=use_uncertainty_loss,
+            use_kl_loss=use_kl_loss,
+            bn_influence=bn_influence,
+            **kwargs
+        )
 
     def _build_model(self, data, discrete_columns):
         """Override to ensure we use our custom generator"""
@@ -216,15 +234,21 @@ class BGANWithBN(BGAN):
         return super().fit(data, discrete_columns)
     
 class BN_AUG_SDG:
-    def __init__(self, epochs=100, batch_norm=True, embedding_dim=256, bn_influence=0.1):
+    def __init__(self, epochs=100, batch_norm=True, embedding_dim=256, bn_influence=0.1, use_uncertainty_loss=True, use_kl_loss=True, optimizer_type="adam"):
         self.epochs = epochs
         self.batch_norm = batch_norm
         self.embedding_dim = embedding_dim
         self.bn_influence = bn_influence
+        self.use_uncertainty_loss = use_uncertainty_loss
+        self.use_kl_loss = use_kl_loss
+        self.optimizer_type = optimizer_type
 
         self.bgan = BGAN(
             epochs = epochs,
             bn_influence = bn_influence,
+            use_uncertainty_loss=use_uncertainty_loss,
+            use_kl_loss=use_kl_loss,
+            optimizer_type=optimizer_type
         )
         self.bn_structure = None
         self.node_importance = {}
@@ -304,7 +328,7 @@ class BN_AUG_SDG:
         # Learn BN structure and initialize BGAN
         weighted_bn = self.learn_bn_structure(data)
 
-        self.bgan = BGANWithBN(epochs=self.epochs, batch_norm=self.batch_norm)
+        self.bgan = BGANWithBN(epochs=self.epochs, batch_norm=self.batch_norm, optimizer_type=self.optimizer_type, use_uncertainty_loss=self.use_uncertainty_loss, use_kl_loss=self.use_kl_loss, bn_influence=self.bn_influence)
         self.bgan.bn_structure = weighted_bn
         self.bgan.fit(data, discrete_columns)
 
@@ -322,3 +346,59 @@ class BN_AUG_SDG:
             return gen.gate_log
         else:
             raise AttributeError("Gate log not found in generator.")
+
+    def get_bn_structure(self):
+        """
+        Return the learned Bayesian Network structure as a dict.
+        Each key is a node, and the value is a list of (parent, weight) tuples.
+        """
+        if self.bn_structure is None:
+            raise RuntimeError("BN structure not learned. Call fit() first.")
+        return self.bn_structure
+
+    def print_bn_structure(self):
+        """
+        Pretty-print the learned Bayesian Network structure.
+        """
+        if self.bn_structure is None:
+            raise RuntimeError("BN structure not learned. Call fit() first.")
+        print("Learned Bayesian Network structure (DAG):")
+        for node, parents in self.bn_structure.items():
+            if isinstance(parents[0], tuple):
+                # Weighted edges
+                print(f"  {node}: {[f'{p} ({w:.2f})' for p, w in parents]}")
+            else:
+                print(f"  {node}: {parents}")
+
+        
+    def plot_bn_structure(self, weighted=True):
+        """
+        Plot the learned Bayesian Network structure as a DAG.
+        If weighted=True, edge weights are shown.
+        """
+        if self.bn_structure is None:
+            raise RuntimeError("BN structure not learned. Call fit() first.")
+
+        G = nx.DiGraph()
+        for node, parents in self.bn_structure.items():
+            if isinstance(parents[0], tuple):
+                # Weighted edges
+                for parent, weight in parents:
+                    if weighted:
+                        G.add_edge(parent, node, weight=weight)
+                    else:
+                        G.add_edge(parent, node)
+            else:
+                for parent in parents:
+                    G.add_edge(parent, node)
+
+        pos = nx.spring_layout(G, seed=42)
+        plt.figure(figsize=(10, 7))
+        nx.draw(G, pos, with_labels=True, node_color='lightblue', node_size=1200, arrowsize=20)
+        if weighted and any('weight' in d for u, v, d in G.edges(data=True)):
+            edge_labels = nx.get_edge_attributes(G, 'weight')
+            edge_labels = {k: f"{v:.2f}" for k, v in edge_labels.items()}
+            nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_color='red')
+        plt.title("Learned Bayesian Network Structure (DAG)")
+        plt.tight_layout()
+        plt.show()
