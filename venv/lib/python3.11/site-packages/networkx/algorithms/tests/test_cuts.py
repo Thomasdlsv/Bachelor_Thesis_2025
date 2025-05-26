@@ -1,5 +1,6 @@
 """Unit tests for the :mod:`networkx.algorithms.cuts` module."""
 
+
 import networkx as nx
 
 

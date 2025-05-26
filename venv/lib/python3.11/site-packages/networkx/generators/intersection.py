@@ -1,7 +1,6 @@
 """
 Generators for random intersection graphs.
 """
-
 import networkx as nx
 from networkx.utils import py_random_state
 
@@ -13,7 +12,6 @@ __all__ = [
 
 
 @py_random_state(3)
-@nx._dispatchable(graphs=None, returns_graph=True)
 def uniform_random_intersection_graph(n, m, p, seed=None):
     """Returns a uniform random intersection graph.
 
@@ -49,7 +47,6 @@ def uniform_random_intersection_graph(n, m, p, seed=None):
 
 
 @py_random_state(3)
-@nx._dispatchable(graphs=None, returns_graph=True)
 def k_random_intersection_graph(n, m, k, seed=None):
     """Returns a intersection graph with randomly chosen attribute sets for
     each node that are of equal size (k).
@@ -85,7 +82,6 @@ def k_random_intersection_graph(n, m, k, seed=None):
 
 
 @py_random_state(3)
-@nx._dispatchable(graphs=None, returns_graph=True)
 def general_random_intersection_graph(n, m, p, seed=None):
     """Returns a random intersection graph with independent probabilities
     for connections between node and attribute sets.

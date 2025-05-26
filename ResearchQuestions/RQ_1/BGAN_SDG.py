@@ -2,8 +2,13 @@ from bgan.synthesizers.bgan import BGAN
 import pandas as pd
 
 class BGAN_SDG:
-    def __init__(self, epochs):
-        self.bgan = BGAN(epochs=epochs)
+    def __init__(self, epochs, use_uncertainty_loss=True, use_kl_loss=True, optimizer_type="adam"):
+        self.bgan = BGAN(
+            epochs=epochs,
+            use_uncertainty_loss=use_uncertainty_loss,
+            use_kl_loss=use_kl_loss,
+            optimizer_type=optimizer_type
+        )
 
     def fit(self, real_data, discrete_columns):
         self.bgan.fit(real_data, discrete_columns)

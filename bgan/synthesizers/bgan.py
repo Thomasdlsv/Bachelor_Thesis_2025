@@ -233,13 +233,19 @@ class BGAN(BaseSynthesizer):
         bn_structure=None,
         kl_weight=1e-3,  # KL divergence weight
         bn_influence = 0.1,
+        use_uncertainty_loss=True,
+        use_kl_loss=True,
+        optimizer_type="adam"
     ):
         assert batch_size % 2 == 0
         super().__init__()
         #self.embedding_dim = embedding_dim
         self.bn_structure = bn_structure
+        self.optimizer_type = optimizer_type
 
         self.bn_influence = bn_influence
+        self.use_uncertainty_loss = use_uncertainty_loss
+        self.use_kl_loss = use_kl_loss
 
         #self._embedding_dim = embedding_dim
          # Convert dimensions to lists
@@ -286,6 +292,18 @@ class BGAN(BaseSynthesizer):
         self._data_sampler = None
         self._generator = None
         self.loss_values = None
+
+    def _get_optimizer(self, params, lr, betas=None, weight_decay=0):
+        if self.optimizer_type == "adam":
+            return optim.Adam(params, lr=lr, betas=betas or (0.5, 0.9), weight_decay=weight_decay)
+        elif self.optimizer_type == "adamw":
+            return optim.AdamW(params, lr=lr, betas=betas or (0.9, 0.999), weight_decay=weight_decay)
+        elif self.optimizer_type == "rmsprop":
+            return optim.RMSprop(params, lr=lr, alpha=0.99, weight_decay=weight_decay)
+        elif self.optimizer_type == "sgd":
+            return optim.SGD(params, lr=lr, momentum=0.9, weight_decay=weight_decay)
+        else:
+            raise ValueError(f"Unknown optimizer type: {self.optimizer_type}")
 
     def _kl_divergence(self, mean, log_var):
         """Compute KL divergence between N(mean, std) and N(0, 1)"""
@@ -458,20 +476,8 @@ class BGAN(BaseSynthesizer):
                 pac=self.pac
             ).to(self._device)
 
-            # Optimizers for Generator and Discriminator
-            optimizerG = optim.Adam(
-                self._generator.parameters(),
-                lr=self._generator_lr,
-                betas=(0.5, 0.9),
-                weight_decay=self._generator_decay,
-            )
-
-            optimizerD = optim.Adam(
-                self._discriminator.parameters(),
-                lr=self._discriminator_lr,
-                betas=(0.5, 0.9),
-                weight_decay=self._discriminator_decay,
-            )
+            optimizerG = self._get_optimizer(self._generator.parameters(), self._generator_lr, betas=(0.5, 0.9), weight_decay=self._generator_decay)
+            optimizerD = self._get_optimizer(self._discriminator.parameters(), self._discriminator_lr, betas=(0.5, 0.9), weight_decay=self._discriminator_decay)
 
             embedding_dim = self._embedding_dim
             batch_size = self._batch_size
@@ -565,8 +571,8 @@ class BGAN(BaseSynthesizer):
                     fakeact = self._apply_activate(fake)
 
                      # Calculate KL divergence
-                    kl_loss = self._kl_divergence(mean, log_var)
-                    kl_annealed_weight = self._kl_weight * min(1.0, i / kl_anneal_epochs)
+                    kl_loss = self._kl_divergence(mean, log_var) if self.use_kl_loss else 0
+                    kl_annealed_weight = self._kl_weight * min(1.0, i / kl_anneal_epochs) if self.use_kl_loss else 0
 
                     if c1 is not None:
                         y_fake = self._discriminator(torch.cat([fakeact, c1], dim=1))
@@ -575,11 +581,16 @@ class BGAN(BaseSynthesizer):
 
                     cross_entropy = 0 if condvec is None else self._cond_loss(fake, c1, m1)
 
-                    uncertainty_loss = torch.mean(torch.log(uncertainty_map ** 2 + 1e-8))  # avoid log(0)
+                    #ABLATION STUDY -- SET UNCERTAINTY LOSS = 0 
+
+                    uncertainty_loss = torch.mean(torch.log(uncertainty_map ** 2 + 1e-8)) if self.use_uncertainty_loss else 0.0 # avoid log(0)
 
                     #kl_annealed_weight = self._kl_weight * min(1.0, i / kl_anneal_epochs)
-                    loss_g = -torch.mean(y_fake) + cross_entropy + self._beta * uncertainty_loss + kl_annealed_weight * kl_loss
-
+                    loss_g = -torch.mean(y_fake) + cross_entropy 
+                    if self.use_uncertainty_loss:
+                        loss_g += self._beta * uncertainty_loss
+                    if self.use_kl_loss:
+                        loss_g += kl_annealed_weight * kl_loss
 
                     optimizerG.zero_grad(set_to_none=False)
                     loss_g.backward()

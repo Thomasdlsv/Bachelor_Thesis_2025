@@ -1,6 +1,8 @@
 """
 Pajek tests
 """
+import os
+import tempfile
 
 import networkx as nx
 from networkx.utils import edges_equal, nodes_equal
@@ -25,6 +27,13 @@ class TestPajek:
         )
 
         cls.G.graph["name"] = "Tralala"
+        (fd, cls.fname) = tempfile.mkstemp()
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(cls.data.encode("UTF-8"))
+
+    @classmethod
+    def teardown_class(cls):
+        os.unlink(cls.fname)
 
     def test_parse_pajek_simple(self):
         # Example without node positions or shape
@@ -59,14 +68,9 @@ class TestPajek:
             {("one", "one"), ("two", "one"), ("two", "two"), ("two", "three")},
         )
 
-    def test_read_pajek(self, tmp_path):
+    def test_read_pajek(self):
         G = nx.parse_pajek(self.data)
-        # Read data from file
-        fname = tmp_path / "test.pjk"
-        with open(fname, "wb") as fh:
-            fh.write(self.data.encode("UTF-8"))
-
-        Gin = nx.read_pajek(fname)
+        Gin = nx.read_pajek(self.fname)
         assert sorted(G.nodes()) == sorted(Gin.nodes())
         assert edges_equal(G.edges(), Gin.edges())
         assert self.G.graph == Gin.graph

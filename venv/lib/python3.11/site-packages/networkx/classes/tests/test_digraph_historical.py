@@ -1,5 +1,4 @@
 """Original NetworkX graph tests"""
-
 import pytest
 
 import networkx
@@ -99,9 +98,9 @@ class TestDiGraphHistorical(HistoricalTests):
 
     def test_reverse2(self):
         H = nx.DiGraph()
-        foo = [H.add_edge(u, u + 1) for u in range(5)]
+        foo = [H.add_edge(u, u + 1) for u in range(0, 5)]
         HR = H.reverse()
-        for u in range(5):
+        for u in range(0, 5):
             assert HR.has_edge(u + 1, u)
 
     def test_reverse3(self):
