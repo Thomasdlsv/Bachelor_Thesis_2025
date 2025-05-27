@@ -47,6 +47,7 @@ known_functions_C89 = {
     "atan2": "atan2",
     "exp": "exp",
     "log": "log",
+    "log10": "log10",
     "sinh": "sinh",
     "cosh": "cosh",
     "tanh": "tanh",
@@ -58,7 +59,6 @@ known_functions_C89 = {
 known_functions_C99 = dict(known_functions_C89, **{
     'exp2': 'exp2',
     'expm1': 'expm1',
-    'log10': 'log10',
     'log2': 'log2',
     'log1p': 'log1p',
     'Cbrt': 'cbrt',
@@ -330,9 +330,6 @@ class C89CodePrinter(CodePrinter):
         flat_index = sum(x[0]*x[1] for x in zip(indices, strides)) + offset
         return "%s[%s]" % (self._print(expr.base.label),
                            self._print(flat_index))
-
-    def _print_Idx(self, expr):
-        return self._print(expr.label)
 
     @_as_macro_if_defined
     def _print_NumberSymbol(self, expr):

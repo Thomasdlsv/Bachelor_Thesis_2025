@@ -8,6 +8,5 @@ __version__ = '0.11.1.dev0'
 
 from bgan.demo import load_demo
 from bgan.synthesizers.bgan import BGAN
-from bgan.synthesizers.tvae import TVAE
 
-__all__ = ('BGAN', 'TVAE', 'load_demo')
+__all__ = ('BGAN', 'load_demo')

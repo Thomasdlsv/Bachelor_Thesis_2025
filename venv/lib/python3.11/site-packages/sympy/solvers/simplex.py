@@ -15,7 +15,7 @@ indicate otherwise.
 
 Errors that might be raised are UnboundedLPError when there is no
 finite solution for the system or InfeasibleLPError when the
-constraints represent impossible conditions (i.e. a non-existant
+constraints represent impossible conditions (i.e. a non-existent
  simplex).
 
 Here is a simple 1-D system: minimize `x` given that ``x >= 1``.
@@ -76,7 +76,7 @@ from sympy.utilities.misc import filldedent
 
 class UnboundedLPError(Exception):
     """
-    A linear programing problem is said to be unbounded if its objective
+    A linear programming problem is said to be unbounded if its objective
     function can assume arbitrarily large values.
 
     Example
@@ -95,9 +95,9 @@ class UnboundedLPError(Exception):
 
 class InfeasibleLPError(Exception):
     """
-    A linear programing problem is considered infeasible if its
+    A linear programming problem is considered infeasible if its
     constraint set is empty. That is, if the set of all vectors
-    satisfying the contraints is empty, then the problem is infeasible.
+    satisfying the constraints is empty, then the problem is infeasible.
 
     Example
     =======
@@ -234,7 +234,7 @@ def _simplex(A, B, C, D=None, dual=False):
     >>> [i <= j for i, j in zip(a*y,b)]
     [2*y <= 1, y <= 1]
 
-    In this 1-dimensional dual system, the more restrictive contraint is
+    In this 1-dimensional dual system, the more restrictive constraint is
     the first which limits ``y`` between 0 and 1/2 and the maximum of
     ``F`` is attained at the nonzero value, hence is ``4*(1/2) + 1 = 3``.
 
@@ -359,7 +359,6 @@ def _simplex(A, B, C, D=None, dual=False):
         C = M[-1, :-1]
 
         # Choose a pivot column, c
-        piv_cols = []
         piv_cols = [_ for _ in range(n) if C[_] < 0]
         if not piv_cols:
             break
@@ -828,7 +827,7 @@ def lpmin(f, constr):
     (1/3, {x: 1/3, y: 5/9})
 
     Negative values for variables are permitted unless explicitly
-    exluding, so minimizing ``x`` for ``x <= 3`` is an
+    excluding, so minimizing ``x`` for ``x <= 3`` is an
     unbounded problem while the following has a bounded solution:
 
     >>> lpmin(x, [x >= 0, x <= 3])
@@ -866,7 +865,7 @@ def lpmax(f, constr):
     (4/5, {x: 4/5, y: 2/5})
 
     Negative values for variables are permitted unless explicitly
-    exluding:
+    excluding:
 
     >>> lpmax(x, [x <= -1])
     (-1, {x: -1})
@@ -887,87 +886,56 @@ def lpmax(f, constr):
 
 
 def _handle_bounds(bounds):
-    # introduce auxilliary variables as needed for univariate
+    # introduce auxiliary variables as needed for univariate
     # inequalities
 
+    def _make_list(length: int, index_value_pairs):
+        li = [0] * length
+        for idx, val in index_value_pairs:
+            li[idx] = val
+        return li
+
     unbound = []
-    R = [0] * len(bounds)  # a (growing) row of zeros
-
-    def n():
-        return len(R) - 1
-
-    def Arow(inc=1):
-        R.extend([0] * inc)
-        return R[:]
-
     row = []
+    row2 = []
+    b_len = len(bounds)
     for x, (a, b) in enumerate(bounds):
         if a is None and b is None:
             unbound.append(x)
         elif a is None:
             # r[x] = b - u
-            A = Arow()
-            A[x] = 1
-            A[n()] = 1
-            B = [b]
-            row.append((A, B))
-            A = [0] * len(A)
-            A[x] = -1
-            A[n()] = -1
-            B = [-b]
-            row.append((A, B))
+            b_len += 1
+            row.append(_make_list(b_len, [(x, 1), (-1, 1)]))
+            row.append(_make_list(b_len, [(x, -1), (-1, -1)]))
+            row2.extend([[b], [-b]])
         elif b is None:
             if a:
                 # r[x] = a + u
-                A = Arow()
-                A[x] = 1
-                A[n()] = -1
-                B = [a]
-                row.append((A, B))
-                A = [0] * len(A)
-                A[x] = -1
-                A[n()] = 1
-                B = [-a]
-                row.append((A, B))
+                b_len += 1
+                row.append(_make_list(b_len, [(x, 1), (-1, -1)]))
+                row.append(_make_list(b_len, [(x, -1), (-1, 1)]))
+                row2.extend([[a], [-a]])
             else:
                 # standard nonnegative relationship
                 pass
         else:
             # r[x] = u + a
-            A = Arow()
-            A[x] = 1
-            A[n()] = -1
-            B = [a]
-            row.append((A, B))
-            A = [0] * len(A)
-            A[x] = -1
-            A[n()] = 1
-            B = [-a]
-            row.append((A, B))
+            b_len += 1
+            row.append(_make_list(b_len, [(x, 1), (-1, -1)]))
+            row.append(_make_list(b_len, [(x, -1), (-1, 1)]))
             # u <= b - a
-            A = [0] * len(A)
-            A[x] = 0
-            A[n()] = 1
-            B = [b - a]
-            row.append((A, B))
+            row.append(_make_list(b_len, [(-1, 1)]))
+            row2.extend([[a], [-a], [b - a]])
 
     # make change of variables for unbound variables
     for x in unbound:
         # r[x] = u - v
-        A = Arow(2)
-        B = [0]
-        A[x] = 1
-        A[n()] = 1
-        A[n() - 1] = -1
-        row.append((A, B))
-        A = [0] * len(A)
-        A[x] = -1
-        A[n()] = -1
-        A[n() - 1] = 1
-        row.append((A, B))
+        b_len += 2
+        row.append(_make_list(b_len, [(x, 1), (-1, 1), (-2, -1)]))
+        row.append(_make_list(b_len, [(x, -1), (-1, -1), (-2, 1)]))
+        row2.extend([[0], [0]])
 
-    return Matrix([r+[0]*(len(R) - len(r)) for r,_ in row]
-        ), Matrix([i[1] for i in row])
+    return Matrix([r + [0]*(b_len - len(r)) for r in row]), Matrix(row2)
 
 
 def linprog(c, A=None, b=None, A_eq=None, b_eq=None, bounds=None):
@@ -1129,13 +1097,8 @@ def show_linprog(c, A=None, b=None, A_eq=None, b_eq=None, bounds=None):
     x = Matrix(symbols('x1:%s' % (A.cols+1)))
     f,c = (C*x)[0], [i<=j for i,j in zip(A*x, b)] + [Eq(i,j) for i,j in zip(A_eq*x,b_eq)]
     for i, (lo, hi) in enumerate(bounds):
-        if lo is None and hi is None:
-            continue
-        if lo is None:
-            c.append(x[i]<=hi)
-        elif hi is None:
+        if lo is not None:
             c.append(x[i]>=lo)
-        else:
-            c.append(x[i]>=lo)
+        if hi is not None:
             c.append(x[i]<=hi)
     return f,c

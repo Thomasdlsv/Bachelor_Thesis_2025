@@ -1,9 +1,8 @@
 """Synthesizers module."""
 
 from bgan.synthesizers.bgan import BGAN
-from bgan.synthesizers.tvae import TVAE
 
-__all__ = ('BGAN', 'TVAE')
+__all__ = ('BGAN')
 
 
 def get_all_synthesizers():

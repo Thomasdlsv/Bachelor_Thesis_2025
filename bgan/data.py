@@ -1,4 +1,19 @@
-"""Data loading."""
+"""
+Data loading utilities for BGAN.
+
+This file is part of the BGAN framework for tabular data synthesis and imputation.
+
+The data loading and metadata handling logic in this file is inspired by and partially
+adapted from the CTGAN codebase:
+https://github.com/sdv-dev/CTGAN (MIT License).
+The CSV/TSV reading, discrete/continuous column handling, and metadata parsing
+are based on the CTGAN data.py implementation, with modifications for BGAN.
+
+MIT License applies to portions derived from CTGAN:
+https://github.com/sdv-dev/CTGAN/blob/master/LICENSE
+
+-------------------------------------------------------------------------------
+"""
 
 import json
 
@@ -7,7 +22,18 @@ import pandas as pd
 
 
 def read_csv(csv_filename, meta_filename=None, header=True, discrete=None):
-    """Read a csv file."""
+    """
+    Read a CSV file and extract discrete columns.
+
+    Args:
+        csv_filename (str): Path to the CSV file.
+        meta_filename (str, optional): Path to metadata JSON file.
+        header (bool): Whether the CSV has a header row.
+        discrete (str, optional): Comma-separated list of discrete column names or indices.
+
+    Returns:
+        tuple: (data as pd.DataFrame, list of discrete column names or indices)
+    """
     data = pd.read_csv(csv_filename, header='infer' if header else None)
 
     if meta_filename:
@@ -30,7 +56,16 @@ def read_csv(csv_filename, meta_filename=None, header=True, discrete=None):
 
 
 def read_tsv(data_filename, meta_filename):
-    """Read a tsv file."""
+    """
+    Read a TSV file and extract discrete/continuous columns and metadata.
+
+    Args:
+        data_filename (str): Path to the TSV data file.
+        meta_filename (str): Path to the metadata file.
+
+    Returns:
+        tuple: (data as np.ndarray, list of discrete column indices)
+    """
     with open(meta_filename) as f:
         column_info = f.readlines()
 
@@ -75,7 +110,14 @@ def read_tsv(data_filename, meta_filename):
 
 
 def write_tsv(data, meta, output_filename):
-    """Write to a tsv file."""
+    """
+    Write data and metadata to a TSV file.
+
+    Args:
+        data (np.ndarray): Data to write.
+        meta (dict): Metadata dictionary with 'continuous_columns', 'discrete_columns', and 'column_info'.
+        output_filename (str): Path to output TSV file.
+    """
     with open(output_filename, 'w') as f:
         for row in data:
             for idx, col in enumerate(row):

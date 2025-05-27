@@ -1,4 +1,27 @@
-"""BGAN module."""
+"""
+BGAN module.
+
+This module implements the Bayesian Generative Adversarial Network (BGAN) for tabular data,
+with extensions for uncertainty estimation, Bayesian regularization, and optional Bayesian
+Network (BN) structure integration. It is inspired by CTGAN (https://github.com/sdv-dev/CTGAN)
+and TableGAN, but introduces several key differences:
+
+- Uncertainty Estimation: The generator outputs both mean and log-variance, enabling
+  aleatoric uncertainty estimation for each feature.
+- Bayesian Regularization: KL divergence is used to regularize the latent space.
+- MC Dropout: The discriminator uses dropout at inference for Bayesian uncertainty.
+- BN Integration: Optionally, a Bayesian Network structure can guide the generator
+  via soft parent embedding transformations.
+- Flexible Optimizers: Supports Adam, AdamW, RMSprop, and SGD.
+- PAC Discriminator: The discriminator operates on grouped ("packed") samples for
+  improved stability, as in CTGAN.
+
+This code is inspired by and partially adapted from CTGAN (MIT License), but is
+substantially modified for Bayesian and uncertainty-aware imputation and synthesis.
+
+MIT License applies to portions derived from CTGAN:
+https://github.com/sdv-dev/CTGAN/blob/master/LICENSE
+"""
 
 import warnings
 
@@ -17,7 +40,13 @@ from bgan.synthesizers.base import BaseSynthesizer, random_state
 
 
 class Discriminator(nn.Module):
-    """Bayesian Discriminator with MC Dropout."""
+    """
+    Bayesian Discriminator with MC Dropout and PAC grouping.
+
+    Differences from standard GAN:
+    - Uses MC Dropout for Bayesian uncertainty.
+    - Operates on "packed" samples (PAC) for improved stability (as in CTGAN).
+    """
 
     def __init__(self, input_dim, discriminator_dim, pac=10, dropout_prob=0.2):
         super(Discriminator, self).__init__()
@@ -54,6 +83,9 @@ class Discriminator(nn.Module):
         self.output_layer = nn.Linear(dim, 1)
 
     def forward(self, x):
+        """
+        Forward pass with PAC grouping.
+        """
         # Reshape for PAC
         assert x.size()[0] % self.pac == 0, 'Batch size must be divisible by pac.'
         x = x.view(-1, self.input_dim * self.pac)
@@ -61,8 +93,10 @@ class Discriminator(nn.Module):
         h = self.hidden(x)
         return self.output_layer(h)
 
-    # Optimized calc_gradient_penalty
     def calc_gradient_penalty(self, real_data, fake_data, device, pac):
+        """
+        Compute gradient penalty for WGAN-GP.
+        """
         alpha = torch.rand(real_data.size(0), 1, device=device).expand(real_data.size())
         interpolates = alpha * real_data + ((1 - alpha) * fake_data)
         interpolates.requires_grad_(True)
@@ -80,6 +114,9 @@ class Discriminator(nn.Module):
 
 
 class ResidualBlock(nn.Module):
+    """
+    Residual block with batch normalization and skip connection.
+    """
     def __init__(self, in_dim, out_dim):
         super().__init__()
         self.fc1 = nn.Linear(in_dim, out_dim)
@@ -95,13 +132,15 @@ class ResidualBlock(nn.Module):
         out = self.act2(self.bn2(self.fc2(out)))
         return out + self.skip(x)
 
-'''
-The generator outputs both the mean and log-variance (for uncertainty) of the latent space, 
-and an uncertainty map that estimates aleatoric uncertainty
-
-'''
-
 class Generator(nn.Module):
+    """
+    Generator with uncertainty estimation and optional BN structure guidance.
+
+    Differences from standard GAN generator:
+    - Outputs mean and log-variance for each feature (aleatoric uncertainty).
+    - Outputs an uncertainty map (Softplus).
+    - Optionally integrates Bayesian Network structure by transforming parent embeddings.
+    """
     def __init__(self, embedding_dim, generator_dim, data_dim, bn_structure=None, bn_influence = 0.1):
         super().__init__()
         self.embedding_dim = int(embedding_dim)
@@ -142,6 +181,9 @@ class Generator(nn.Module):
 
 
     def forward(self, z):
+        """
+        Forward pass with optional BN guidance and uncertainty estimation.
+        """
         # Soft BN guidance: transform parents' embeddings and add to node's embedding
         if self.bn_structure and self.bn_transforms is not None:
             for node, parents in self.bn_structure.items():
@@ -167,50 +209,60 @@ class Generator(nn.Module):
 
 
 class BGAN(BaseSynthesizer):
-    """Conditional Table GAN Synthesizer.
+    """
+    Bayesian Generative Adversarial Network (BGAN) for Tabular Data.
 
-    This is the core class of the BGAN project, where the different components
-    are orchestrated together.
-    For more details about the process, please check the [Modeling Tabular data using
-    Conditional GAN](https://arxiv.org/abs/1907.00503) paper.
+    This class implements a GAN-based synthesizer for tabular data with several
+    Bayesian and uncertainty-aware extensions, as proposed in our thesis.
+
+    Key features and differences from standard GANs and prior work:
+    ----------------------------------------------------------------
+    - Uncertainty Estimation: The generator outputs both mean and log-variance,
+      enabling aleatoric uncertainty estimation for each feature. This is not present
+      in standard GANs or in CTGAN/TableGAN.
+    - Bayesian Regularization: KL divergence is used to regularize the latent space,
+      encouraging the generator to produce samples from a distribution close to standard normal.
+    - MC Dropout in Discriminator: The discriminator uses dropout at inference time,
+      providing Bayesian uncertainty estimates for the real/fake decision.
+    - Optional Bayesian Network (BN) Integration:* The generator can be guided by a
+      learned Bayesian Network structure, allowing soft parent embedding transformations
+      to influence feature generation. This is a novel extension for structure-aware synthesis.
+    - PAC Discriminator: The discriminator operates on grouped ("packed") samples for
+      improved stability, as introduced in CTGAN [Xu et al., 2019].
+    - Flexible Optimizer Selection: Supports Adam, AdamW, RMSprop, and SGD.
+    - Ablation Controls: Uncertainty loss and KL loss can be toggled for ablation studies.
+
+    References:
+    -----------
+    - Xu, L., Skoularidou, M., Cuesta-Infante, A., & Veeramachaneni, K. (2019).
+      Modeling Tabular data using Conditional GAN. NeurIPS 2019.
+      [https://arxiv.org/abs/1907.00503]
+    - CTGAN codebase (MIT License): https://github.com/sdv-dev/CTGAN
+      Portions of this code are adapted from CTGAN, with substantial modifications
+      for Bayesian and uncertainty-aware synthesis. MIT License applies to those portions.
 
     Args:
-        embedding_dim (int):
-            Size of the random sample passed to the Generator. Defaults to 128.
-        generator_dim (tuple or list of ints):
-            Size of the output samples for each one of the Residuals. A Residual Layer
-            will be created for each one of the values provided. Defaults to (256, 256).
-        discriminator_dim (tuple or list of ints):
-            Size of the output samples for each one of the Discriminator Layers. A Linear Layer
-            will be created for each one of the values provided. Defaults to (256, 256).
-        generator_lr (float):
-            Learning rate for the generator. Defaults to 2e-4.
-        generator_decay (float):
-            Generator weight decay for the Adam Optimizer. Defaults to 1e-6.
-        discriminator_lr (float):
-            Learning rate for the discriminator. Defaults to 2e-4.
-        discriminator_decay (float):
-            Discriminator weight decay for the Adam Optimizer. Defaults to 1e-6.
-        batch_size (int):
-            Number of data samples to process in each step.
-        discriminator_steps (int):
-            Number of discriminator updates to do for each generator update.
-            From the WGAN paper: https://arxiv.org/abs/1701.07875. WGAN paper
-            default is 5. Default used is 1 to match original BGAN implementation.
-        log_frequency (boolean):
-            Whether to use log frequency of categorical levels in conditional
-            sampling. Defaults to ``True``.
-        verbose (boolean):
-            Whether to have print statements for progress results. Defaults to ``False``.
-        epochs (int):
-            Number of training epochs. Defaults to 300.
-        pac (int):
-            Number of samples to group together when applying the discriminator.
-            Defaults to 10.
-        cuda (bool):
-            Whether to attempt to use cuda for GPU computation.
-            If this is False or CUDA is not available, CPU will be used.
-            Defaults to ``True``.
+        embedding_dim (int): Size of the random sample passed to the Generator. Defaults to 128.
+        generator_dim (tuple or list of ints): Hidden layer sizes for the generator. Defaults to (256, 256).
+        discriminator_dim (tuple or list of ints): Hidden layer sizes for the discriminator. Defaults to (256, 256).
+        generator_lr (float): Learning rate for the generator. Defaults to 2e-4.
+        generator_decay (float): Generator weight decay for the optimizer. Defaults to 1e-6.
+        discriminator_lr (float): Learning rate for the discriminator. Defaults to 2e-4.
+        discriminator_decay (float): Discriminator weight decay for the optimizer. Defaults to 1e-6.
+        batch_size (int): Number of data samples to process in each step.
+        discriminator_steps (int): Number of discriminator updates per generator update.
+        log_frequency (bool): Whether to use log frequency of categorical levels in conditional sampling.
+        verbose (bool): Whether to print progress results.
+        epochs (int): Number of training epochs.
+        pac (int): Number of samples to group together when applying the discriminator (PAC).
+        cuda (bool or str): Whether to use CUDA for GPU computation.
+        beta (float): Weight for the uncertainty loss term.
+        bn_structure (dict): Optional Bayesian network structure for generator guidance.
+        kl_weight (float): Weight for the KL divergence loss term.
+        bn_influence (float): Influence of BN-guided parent embeddings in the generator.
+        use_uncertainty_loss (bool): Whether to include uncertainty loss in the generator objective.
+        use_kl_loss (bool): Whether to include KL divergence loss in the generator objective.
+        optimizer_type (str): Optimizer type ("adam", "adamw", "rmsprop", "sgd").
     """
 
     def __init__(
@@ -294,6 +346,9 @@ class BGAN(BaseSynthesizer):
         self.loss_values = None
 
     def _get_optimizer(self, params, lr, betas=None, weight_decay=0):
+        """
+        Flexible optimizer selection.
+        """
         if self.optimizer_type == "adam":
             return optim.Adam(params, lr=lr, betas=betas or (0.5, 0.9), weight_decay=weight_decay)
         elif self.optimizer_type == "adamw":
@@ -306,7 +361,9 @@ class BGAN(BaseSynthesizer):
             raise ValueError(f"Unknown optimizer type: {self.optimizer_type}")
 
     def _kl_divergence(self, mean, log_var):
-        """Compute KL divergence between N(mean, std) and N(0, 1)"""
+        """
+        Compute KL divergence between N(mean, std) and N(0, 1)
+        """
         return -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp(), dim=1).mean()
 
     @staticmethod
@@ -436,6 +493,9 @@ class BGAN(BaseSynthesizer):
             )
 
     def fit(self, train_data, discrete_columns=(), epochs=None, bn_structure=None):
+            """
+            Fit the BGAN model to the training data.
+            """
             # Validate columns and data
             self._validate_discrete_columns(train_data, discrete_columns)
             self._validate_null_data(train_data, discrete_columns)
@@ -686,9 +746,15 @@ class BGAN(BaseSynthesizer):
             self._generator.to(self._device)
 
     def get_discriminator(self):
+        """
+        Return the discriminator network.
+        """
         return self._discriminator
     
     def eval(self):
+        """
+        Set generator and discriminator to evaluation mode.
+        """
         if self._generator:
             self._generator.eval()
         if self._discriminator:

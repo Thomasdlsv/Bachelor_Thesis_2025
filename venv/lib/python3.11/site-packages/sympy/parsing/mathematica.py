@@ -449,7 +449,7 @@ class MathematicaParser:
 
         s = m.string                # whole string
         anc = m.end() + 1           # pointing the first letter of arguments
-        square, curly = [], []      # stack for brakets
+        square, curly = [], []      # stack for brackets
         args = []
 
         # current cursor
@@ -983,7 +983,6 @@ class MathematicaParser:
         "Log": lambda *a: log(*reversed(a)),
         "Log2": lambda x: log(x, 2),
         "Log10": lambda x: log(x, 10),
-        "Rational": Rational,
         "Exp": exp,
         "Sqrt": sqrt,
 

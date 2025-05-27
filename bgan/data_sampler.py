@@ -1,10 +1,35 @@
-"""DataSampler module."""
+"""
+DataSampler module.
+
+This file is part of the BGAN framework for tabular data synthesis and imputation.
+
+This class is inspired by and partially adapted from the CTGAN codebase:
+https://github.com/sdv-dev/CTGAN (MIT License).
+The conditional sampling logic, category frequency handling, and data selection
+are based on the CTGAN DataSampler implementation, with modifications for BGAN.
+
+MIT License applies to portions derived from CTGAN:
+https://github.com/sdv-dev/CTGAN/blob/master/LICENSE
+
+-------------------------------------------------------------------------------
+"""
 
 import numpy as np
 
 
 class DataSampler(object):
-    """DataSampler samples the conditional vector and corresponding data for BGAN."""
+    """
+    DataSampler samples the conditional vector and corresponding data for BGAN.
+
+    This class is adapted from the CTGAN DataSampler, with modifications for
+    integration with the BGAN framework and additional documentation.
+
+    References:
+    - Xu, L., Skoularidou, M., Cuesta-Infante, A., & Veeramachaneni, K. (2019).
+      Modeling Tabular data using Conditional GAN. NeurIPS 2019.
+      [https://arxiv.org/abs/1907.00503]
+    - CTGAN codebase (MIT License): https://github.com/sdv-dev/CTGAN
+    """
 
     def __init__(self, data, output_info, log_frequency):
         self._data_length = len(data)

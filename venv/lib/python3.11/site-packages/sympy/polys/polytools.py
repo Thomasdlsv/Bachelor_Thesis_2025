@@ -1,9 +1,11 @@
 """User-friendly public interface to polynomial functions. """
 
+from __future__ import annotations
 
 from functools import wraps, reduce
 from operator import mul
 from typing import Optional
+from collections import Counter, defaultdict
 
 from sympy.core import (
     S, Expr, Add, Tuple
@@ -55,7 +57,6 @@ from sympy.polys.rootisolation import dup_isolate_real_roots_list
 from sympy.utilities import group, public, filldedent
 from sympy.utilities.exceptions import sympy_deprecation_warning
 from sympy.utilities.iterables import iterable, sift
-
 
 # Required to avoid errors
 import sympy.polys
@@ -163,7 +164,10 @@ class Poly(Basic):
     is_Poly = True
     _op_priority = 10.001
 
-    def __new__(cls, rep, *gens, **args):
+    rep: DMP
+    gens: tuple[Expr, ...]
+
+    def __new__(cls, rep, *gens, **args) -> Poly:
         """Create a new polynomial instance out of something useful. """
         opt = options.build_options(gens, args)
 
@@ -178,7 +182,7 @@ class Poly(Basic):
             else:
                 return cls._from_list(list(rep), opt)
         else:
-            rep = sympify(rep, evaluate=type(rep) is not str)
+            rep = sympify(rep, evaluate=type(rep) is not str) # type: ignore
 
             if rep.is_Poly:
                 return cls._from_poly(rep, opt)
@@ -438,11 +442,6 @@ class Poly(Basic):
     def one(self):
         """Return one polynomial with ``self``'s properties. """
         return self.new(self.rep.one(self.rep.lev, self.rep.dom), *self.gens)
-
-    @property
-    def unit(self):
-        """Return unit polynomial with ``self``'s properties. """
-        return self.new(self.rep.unit(self.rep.lev, self.rep.dom), *self.gens)
 
     def unify(f, g):
         """
@@ -3356,7 +3355,7 @@ class Poly(Basic):
 
         return [(f.per(g), k) for g, k in factors]
 
-    def factor_list(f):
+    def factor_list(f) -> tuple[Expr, list[tuple[Poly, int]]]:
         """
         Returns a list of irreducible factors of ``f``.
 
@@ -3713,11 +3712,12 @@ class Poly(Basic):
         else:
             coeffs = [coeff.evalf(n=n).as_real_imag()
                     for coeff in f.all_coeffs()]
-            try:
-                coeffs = [mpmath.mpc(*coeff) for coeff in coeffs]
-            except TypeError:
-                raise DomainError("Numerical domain expected, got %s" % \
-                        f.rep.dom)
+            with mpmath.workdps(n):
+                try:
+                    coeffs = [mpmath.mpc(*coeff) for coeff in coeffs]
+                except TypeError:
+                    raise DomainError("Numerical domain expected, got %s" % \
+                            f.rep.dom)
 
         dps = mpmath.mp.dps
         mpmath.mp.dps = n
@@ -3816,6 +3816,150 @@ class Poly(Basic):
 
         return r.replace(t, x)
 
+    def which_real_roots(f, candidates):
+        """
+        Find roots of a square-free polynomial ``f`` from ``candidates``.
+
+        Explanation
+        ===========
+
+        If ``f`` is a square-free polynomial and ``candidates`` is a superset
+        of the roots of ``f``, then ``f.which_real_roots(candidates)`` returns a
+        list containing exactly the set of roots of ``f``. The domain must be
+        :ref:`ZZ`, :ref:`QQ`, or :ref:`QQ(a)` and``f`` must be univariate and
+        square-free.
+
+        The list ``candidates`` must be a superset of the real roots of ``f``
+        and ``f.which_real_roots(candidates)`` returns the set of real roots
+        of ``f``. The output preserves the order of the order of ``candidates``.
+
+        Examples
+        ========
+
+        >>> from sympy import Poly, sqrt
+        >>> from sympy.abc import x
+
+        >>> f = Poly(x**4 - 1)
+        >>> f.which_real_roots([-1, 1, 0, -2, 2])
+        [-1, 1]
+        >>> f.which_real_roots([-1, 1, 1, 1, 1])
+        [-1, 1]
+
+        This method is useful as lifting to rational coefficients
+        produced extraneous roots, which we can filter out with
+        this method.
+
+        >>> f = Poly(sqrt(2)*x**3 + x**2 - 1, x, extension=True)
+        >>> f.lift()
+        Poly(-2*x**6 + x**4 - 2*x**2 + 1, x, domain='QQ')
+        >>> f.lift().real_roots()
+        [-sqrt(2)/2, sqrt(2)/2]
+        >>> f.which_real_roots(f.lift().real_roots())
+        [sqrt(2)/2]
+
+        This procedure is already done internally when calling
+        `.real_roots()` on a polynomial with algebraic coefficients.
+
+        >>> f.real_roots()
+        [sqrt(2)/2]
+
+        See Also
+        ========
+
+        same_root
+        which_all_roots
+        """
+        if f.is_multivariate:
+            raise MultivariatePolynomialError(
+                "Must be a univariate polynomial")
+
+        dom = f.get_domain()
+
+        if not (dom.is_ZZ or dom.is_QQ or dom.is_AlgebraicField):
+            raise NotImplementedError(
+                "root counting not supported over %s" % dom)
+
+        return f._which_roots(candidates, f.count_roots())
+
+    def which_all_roots(f, candidates):
+        """
+        Find roots of a square-free polynomial ``f`` from ``candidates``.
+
+        Explanation
+        ===========
+
+        If ``f`` is a square-free polynomial and ``candidates`` is a superset
+        of the roots of ``f``, then ``f.which_all_roots(candidates)`` returns a
+        list containing exactly the set of roots of ``f``. The polynomial``f``
+        must be univariate and square-free.
+
+        The list ``candidates`` must be a superset of the complex roots of
+        ``f`` and ``f.which_all_roots(candidates)`` returns exactly the
+        set of all complex roots of ``f``. The output preserves the order of
+        the order of ``candidates``.
+
+        Examples
+        ========
+
+        >>> from sympy import Poly, I
+        >>> from sympy.abc import x
+
+        >>> f = Poly(x**4 - 1)
+        >>> f.which_all_roots([-1, 1, -I, I, 0])
+        [-1, 1, -I, I]
+        >>> f.which_all_roots([-1, 1, -I, I, I, I])
+        [-1, 1, -I, I]
+
+        This method is useful as lifting to rational coefficients
+        produced extraneous roots, which we can filter out with
+        this method.
+
+        >>> f = Poly(x**2 + I*x - 1, x, extension=True)
+        >>> f.lift()
+        Poly(x**4 - x**2 + 1, x, domain='ZZ')
+        >>> f.lift().all_roots()
+        [CRootOf(x**4 - x**2 + 1, 0),
+        CRootOf(x**4 - x**2 + 1, 1),
+        CRootOf(x**4 - x**2 + 1, 2),
+        CRootOf(x**4 - x**2 + 1, 3)]
+        >>> f.which_all_roots(f.lift().all_roots())
+        [CRootOf(x**4 - x**2 + 1, 0), CRootOf(x**4 - x**2 + 1, 2)]
+
+        This procedure is already done internally when calling
+        `.all_roots()` on a polynomial with algebraic coefficients,
+        or polynomials with Gaussian domains.
+
+        >>> f.all_roots()
+        [CRootOf(x**4 - x**2 + 1, 0), CRootOf(x**4 - x**2 + 1, 2)]
+
+        See Also
+        ========
+
+        same_root
+        which_real_roots
+        """
+        if f.is_multivariate:
+            raise MultivariatePolynomialError(
+                "Must be a univariate polynomial")
+
+        return f._which_roots(candidates, f.degree())
+
+    def _which_roots(f, candidates, num_roots):
+        prec = 10
+        # using Counter bc its like an ordered set
+        root_counts = Counter(candidates)
+
+        while len(root_counts) > num_roots:
+            for r in list(root_counts.keys()):
+                # If f(r) != 0 then f(r).evalf() gives a float/complex with precision.
+                f_r = f(r).evalf(prec, maxn=2*prec)
+                if abs(f_r)._prec >= 2:
+                    root_counts.pop(r)
+
+            prec *= 2
+
+        return list(root_counts.keys())
+
     def same_root(f, a, b):
         """
         Decide whether two roots of this polynomial are equal.
@@ -3841,6 +3985,11 @@ class Poly(Basic):
         PolynomialError
             If the polynomial is of degree < 2.
 
+        See Also
+        ========
+
+        which_real_roots
+        which_all_roots
         """
         if f.is_multivariate:
             raise MultivariatePolynomialError(
@@ -6111,6 +6260,12 @@ def sqf_part(f, *gens, **args):
         return result
 
 
+def _poly_sort_key(poly):
+    """Sort a list of polys."""
+    rep = poly.rep.to_list()
+    return (len(rep), len(poly.gens), str(poly.domain), rep)
+
+
 def _sorted_factors(factors, method):
     """Sort a list of ``(expr, exp)`` pairs. """
     if method == 'sqf':
@@ -6186,8 +6341,11 @@ def _symbolic_factor_list(expr, opt, method):
     if method == 'sqf':
         factors = [(reduce(mul, (f for f, _ in factors if _ == k)), k)
                    for k in {i for _, i in factors}]
-
-    return coeff, factors
+    #collect duplicates
+    rv = defaultdict(int)
+    for k, v in factors:
+        rv[k] += v
+    return coeff, list(rv.items())
 
 
 def _symbolic_factor(expr, opt, method):
@@ -6701,7 +6859,7 @@ def count_roots(f, inf=None, sup=None):
 
 
 @public
-def all_roots(f, multiple=True, radicals=True):
+def all_roots(f, multiple=True, radicals=True, extension=False):
     """
     Returns the real and complex roots of ``f`` with multiplicities.
 
@@ -6744,8 +6902,8 @@ def all_roots(f, multiple=True, radicals=True):
     >>> [r.evalf(3) for r in all_roots(p)]
     [1.17, -0.765 - 0.352*I, -0.765 + 0.352*I, 0.181 - 1.08*I, 0.181 + 1.08*I]
 
-    Irrational algebraic or transcendental coefficients cannot currently be
-    handled by :func:`all_roots` (or :func:`~.rootof` more generally):
+    Irrational algebraic coefficients are handled by :func:`all_roots`
+    if `extension=True` is set.
 
     >>> from sympy import sqrt, expand
     >>> p = expand((x - sqrt(2))*(x - sqrt(3)))
@@ -6755,8 +6913,19 @@ def all_roots(f, multiple=True, radicals=True):
     Traceback (most recent call last):
     ...
     NotImplementedError: sorted roots not supported over EX
+    >>> all_roots(p, extension=True)
+    [sqrt(2), sqrt(3)]
 
-    In the case of algebraic or transcendental coefficients
+    Algebraic coefficients can be complex as well.
+
+    >>> from sympy import I
+    >>> all_roots(x**2 - I, extension=True)
+    [-sqrt(2)/2 - sqrt(2)*I/2, sqrt(2)/2 + sqrt(2)*I/2]
+    >>> all_roots(x**2 - sqrt(2)*I, extension=True)
+    [-2**(3/4)/2 - 2**(3/4)*I/2, 2**(3/4)/2 + 2**(3/4)*I/2]
+
+    Transcendental coefficients cannot currently be handled by
+    :func:`all_roots`. In the case of algebraic or transcendental coefficients
     :func:`~.ground_roots` might be able to find some roots by factorisation:
 
     >>> from sympy import ground_roots
@@ -6791,6 +6960,10 @@ def all_roots(f, multiple=True, radicals=True):
     radicals : ``bool`` (default ``True``)
         Use simple radical formulae rather than :py:class:`~.ComplexRootOf` for
         some irrational roots.
+    extension: ``bool`` (default ``False``)
+        Whether to construct an algebraic extension domain before computing
+        the roots. Setting to ``True`` is necessary for finding roots of a
+        polynomial with (irrational) algebraic coefficients but can be slow.
 
     Returns
     =======
@@ -6830,7 +7003,17 @@ def all_roots(f, multiple=True, radicals=True):
     .. [1] https://en.wikipedia.org/wiki/Abel%E2%80%93Ruffini_theorem
     """
     try:
-        F = Poly(f, greedy=False)
+        if isinstance(f, Poly):
+            if extension and not f.domain.is_AlgebraicField:
+                F = Poly(f.expr, extension=True)
+            else:
+                F = f
+        else:
+            if extension:
+                F = Poly(f, extension=True)
+            else:
+                F = Poly(f, greedy=False)
+
         if not isinstance(f, Poly) and not F.gen.is_Symbol:
             # root of sin(x) + 1 is -1 but when someone
             # passes an Expr instead of Poly they may not expect
@@ -6844,7 +7027,7 @@ def all_roots(f, multiple=True, radicals=True):
 
 
 @public
-def real_roots(f, multiple=True, radicals=True):
+def real_roots(f, multiple=True, radicals=True, extension=False):
     """
     Returns the real roots of ``f`` with multiplicities.
 
@@ -6920,8 +7103,8 @@ def real_roots(f, multiple=True, radicals=True):
     polynomials of high degree which typically have many more complex roots
     than real roots.
 
-    Irrational algebraic or transcendental coefficients cannot be handled by
-    :func:`real_roots` (or :func:`~.rootof` more generally):
+    Irrational algebraic coefficients are handled by :func:`real_roots`
+    if `extension=True` is set.
 
     >>> from sympy import sqrt, expand
     >>> p = expand((x - sqrt(2))*(x - sqrt(3)))
@@ -6931,8 +7114,11 @@ def real_roots(f, multiple=True, radicals=True):
     Traceback (most recent call last):
     ...
     NotImplementedError: sorted roots not supported over EX
+    >>> real_roots(p, extension=True)
+    [sqrt(2), sqrt(3)]
 
-    In the case of algebraic or transcendental coefficients
+    Transcendental coefficients cannot currently be handled by
+    :func:`real_roots`. In the case of algebraic or transcendental coefficients
     :func:`~.ground_roots` might be able to find some roots by factorisation:
 
     >>> from sympy import ground_roots
@@ -6967,6 +7153,10 @@ def real_roots(f, multiple=True, radicals=True):
     radicals : ``bool`` (default ``True``)
         Use simple radical formulae rather than :py:class:`~.ComplexRootOf` for
         some irrational roots.
+    extension: ``bool`` (default ``False``)
+        Whether to construct an algebraic extension domain before computing
+        the roots. Setting to ``True`` is necessary for finding roots of a
+        polynomial with (irrational) algebraic coefficients but can be slow.
 
     Returns
     =======
@@ -7003,7 +7193,17 @@ def real_roots(f, multiple=True, radicals=True):
     .. [1] https://en.wikipedia.org/wiki/Casus_irreducibilis
     """
     try:
-        F = Poly(f, greedy=False)
+        if isinstance(f, Poly):
+            if extension and not f.domain.is_AlgebraicField:
+                F = Poly(f.expr, extension=True)
+            else:
+                F = f
+        else:
+            if extension:
+                F = Poly(f, extension=True)
+            else:
+                F = Poly(f, greedy=False)
+
         if not isinstance(f, Poly) and not F.gen.is_Symbol:
             # root of sin(x) + 1 is -1 but when someone
             # passes an Expr instead of Poly they may not expect
@@ -7157,7 +7357,7 @@ def cancel(f, *gens, _signsimp=True, **args):
     if 'polys' in args:
         opt['polys'] = args['polys']
 
-    if not isinstance(f, (tuple, Tuple)):
+    if not isinstance(f, Tuple):
         if f.is_Number or isinstance(f, Relational) or not isinstance(f, Expr):
             return f
         f = factor_terms(f, radical=True)
@@ -7170,8 +7370,6 @@ def cancel(f, *gens, _signsimp=True, **args):
             opt['domain'] = p.domain
             opt['polys'] = opt.get('polys', True)
         p, q = p.as_expr(), q.as_expr()
-    elif isinstance(f, Tuple):
-        return factor_terms(f)
     else:
         raise ValueError('unexpected argument: %s' % f)
 
@@ -7181,7 +7379,7 @@ def cancel(f, *gens, _signsimp=True, **args):
             raise PolynomialError()
         R, (F, G) = sring((p, q), *gens, **args)
         if not R.ngens:
-            if not isinstance(f, (tuple, Tuple)):
+            if not isinstance(f, Tuple):
                 return f.expand()
             else:
                 return S.One, p, q
@@ -7200,8 +7398,7 @@ def cancel(f, *gens, _signsimp=True, **args):
             pot = preorder_traversal(f)
             next(pot)
             for e in pot:
-                # XXX: This should really skip anything that's not Expr.
-                if isinstance(e, (tuple, Tuple, BooleanAtom)):
+                if isinstance(e, BooleanAtom) or not isinstance(e, Expr):
                     continue
                 try:
                     reps.append((e, cancel(e)))
@@ -7214,7 +7411,7 @@ def cancel(f, *gens, _signsimp=True, **args):
     if opt.get('polys', False) and 'gens' not in opt:
         opt['gens'] = R.symbols
 
-    if not isinstance(f, (tuple, Tuple)):
+    if not isinstance(f, Tuple):
         return c*(P.as_expr()/Q.as_expr())
     else:
         P, Q = P.as_expr(), Q.as_expr()
@@ -7554,7 +7751,7 @@ class GroebnerBasis(Basic):
         Examples
         ========
 
-        >>> from sympy import groebner, expand
+        >>> from sympy import groebner, expand, Poly
         >>> from sympy.abc import x, y
 
         >>> f = 2*x**4 - x**2 + y**3 + y**2
@@ -7569,8 +7766,23 @@ class GroebnerBasis(Basic):
         >>> _ == f
         True
 
+        # Using Poly input
+        >>> f_poly = Poly(f, x, y)
+        >>> G = groebner([Poly(x**3 - x), Poly(y**3 - y)])
+
+        >>> G.reduce(f_poly)
+        ([Poly(2*x, x, y, domain='ZZ'), Poly(1, x, y, domain='ZZ')], Poly(x**2 + y**2 + y, x, y, domain='ZZ'))
+
         """
-        poly = Poly._from_expr(expr, self._options)
+        if isinstance(expr, Poly):
+
+            if expr.gens != self._options.gens:
+                raise ValueError("Polynomial generators don't match Groebner basis generators")
+            poly = expr.set_domain(self._options.domain)
+        else:
+
+            poly = Poly._from_expr(expr, self._options)
+
         polys = [poly] + list(self._basis)
 
         opt = self._options

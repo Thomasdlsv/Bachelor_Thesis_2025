@@ -167,7 +167,7 @@ class DiophantineEquationType:
     dimension :
         The number of symbols being solved for
     """
-    name = None  # type: str
+    name: str
 
     def __init__(self, equation, free_symbols=None):
         self.equation = _sympify(equation).expand(force=True)
@@ -985,7 +985,7 @@ class GeneralSumOfSquares(DiophantineEquationType):
 
     .. [1] Representing an integer as a sum of three squares, [online],
         Available:
-        https://www.proofwiki.org/wiki/Integer_as_Sum_of_Three_Squares
+        https://proofwiki.org/wiki/Integer_as_Sum_of_Three_Squares
     """
 
     name = 'general_sum_of_squares'
@@ -1476,13 +1476,13 @@ def diophantine(eq, param=symbols("t", integer=True), syms=None,
         else:
             raise NotImplementedError('unhandled type: %s' % eq_type)
 
-    # remove null merge results
-    if () in sols:
-        sols.remove(())
+    sols.discard(())
     null = tuple([0]*len(var))
     # if there is no solution, return trivial solution
     if not sols and eq.subs(zip(var, null)).is_zero:
-        sols.add(null)
+        if all(check_assumptions(val, **s.assumptions0) is not False for val, s in zip(null, var)):
+            sols.add(null)
+
     final_soln = set()
     for sol in sols:
         if all(int_valued(s) for s in sol):
@@ -1558,7 +1558,8 @@ def diop_solve(eq, param=symbols("t", integer=True)):
 
     Use of ``diophantine()`` is recommended over other helper functions.
     ``diop_solve()`` can return either a set or a tuple depending on the
-    nature of the equation.
+    nature of the equation. All non-trivial solutions are returned: assumptions
+    on symbols are ignored.
 
     Usage
     =====
@@ -2174,6 +2175,25 @@ def cornacchia(a:int, b:int, m:int) -> set[tuple[int, int]]:
     """
     # Assume gcd(a, b) = gcd(a, m) = 1 and a, b > 0 but no error checking
     sols = set()
+
+    if a + b > m:
+        # xy = 0 must hold if there exists a solution
+        if a == 1:
+            # y = 0
+            s, _exact = iroot(m // a, 2)
+            if _exact:
+                sols.add((int(s), 0))
+            if a == b:
+                # only keep one solution
+                return sols
+        if m % b == 0:
+            # x = 0
+            s, _exact = iroot(m // b, 2)
+            if _exact:
+                sols.add((0, int(s)))
+        return sols
+
+    # the original cornacchia
     for t in sqrt_mod_iter(-b*invert(a, m), m):
         if t < m // 2:
             continue
@@ -3386,7 +3406,7 @@ def diop_general_sum_of_squares(eq, limit=1):
 
     .. [1] Representing an integer as a sum of three squares, [online],
         Available:
-        https://www.proofwiki.org/wiki/Integer_as_Sum_of_Three_Squares
+        https://proofwiki.org/wiki/Integer_as_Sum_of_Three_Squares
     """
     var, coeff, diop_type = classify_diop(eq, _dict=False)
 
@@ -3817,7 +3837,7 @@ def power_representation(n, p, k, zeros=False):
                 '''Todd G. Will, "When Is n^2 a Sum of k Squares?", [online].
                 Available: https://www.maa.org/sites/default/files/Will-MMz-201037918.pdf'''
                 return
-            # quick tests since feasibility includes the possiblity of 0
+            # quick tests since feasibility includes the possibility of 0
             if k == 4 and (n in (1, 3, 5, 9, 11, 17, 29, 41) or remove(n, 4)[0] in (2, 6, 14)):
                 # A000534
                 return

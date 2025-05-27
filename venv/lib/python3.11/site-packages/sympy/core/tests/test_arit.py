@@ -14,6 +14,7 @@ from sympy.functions.elementary.exponential import (exp, log)
 from sympy.functions.elementary.integers import floor
 from sympy.functions.elementary.miscellaneous import (Max, sqrt)
 from sympy.functions.elementary.trigonometric import (atan, cos, sin)
+from sympy.integrals.integrals import Integral
 from sympy.polys.polytools import Poly
 from sympy.sets.sets import FiniteSet
 
@@ -1632,6 +1633,8 @@ def test_issue_3531():
     # https://github.com/sympy/sympy/issues/3531
     # https://github.com/sympy/sympy/pull/18116
     class MightyNumeric(tuple):
+        __slots__ = ()
+
         def __rtruediv__(self, other):
             return "something"
 
@@ -1904,6 +1907,12 @@ def test_Mod():
     assert Mod(p + 5, -p - 3) == -p - 1
     assert Mod(-p - 5, -p - 3) == -2
     assert Mod(p + 1, p - 1).func is Mod
+
+    # issue 27749
+    n = symbols('n', integer=True, positive=True)
+    assert unchanged(Mod, 1, n)
+    n = symbols('n', prime=True)
+    assert Mod(1, n) == 1
 
     # handling sums
     assert (x + 3) % 1 == Mod(x, 1)
@@ -2353,6 +2362,14 @@ def test_Mul_does_not_distribute_infinity():
     assert ((1 + I)*oo).is_finite is False
     z = (1 + I)*oo
     assert ((1 - I)*z).expand() is oo
+
+
+def test_Mul_does_not_let_0_trump_inf():
+    assert Mul(*[0, a + zoo]) is S.NaN
+    assert Mul(*[0, a + oo]) is S.NaN
+    assert Mul(*[0, a + Integral(1/x**2, (x, 1, oo))]) is S.Zero
+    # Integral is treated like an unknown like 0*x -> 0
+    assert Mul(*[0, a + Integral(x, (x, 1, oo))]) is S.Zero
 
 
 def test_issue_8247_8354():

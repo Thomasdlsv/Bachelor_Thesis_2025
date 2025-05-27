@@ -14,6 +14,7 @@ and the Diffie-Hellman key exchange.
 
 from string import whitespace, ascii_uppercase as uppercase, printable
 from functools import reduce
+import string
 import warnings
 
 from itertools import cycle
@@ -84,7 +85,7 @@ def AZ(s=None):
     return rv
 
 bifid5 = AZ().replace('J', '')
-bifid6 = AZ() + '0123456789'
+bifid6 = AZ() + string.digits
 bifid10 = printable
 
 
@@ -1010,7 +1011,7 @@ def encipher_bifid(msg, key, symbols=None):
             'Length of alphabet (%s) is not a square number.' % len(A))
     N = int(n)
     if len(long_key) < N**2:
-      long_key = list(long_key) + [x for x in A if x not in long_key]
+        long_key = list(long_key) + [x for x in A if x not in long_key]
 
     # the fractionalization
     row_col = {ch: divmod(i, N) for i, ch in enumerate(long_key)}
@@ -2638,7 +2639,7 @@ def encipher_elgamal(i, key, seed=None):
     ``i`` is a plaintext message expressed as an integer.
     ``key`` is public key (p, r, e). In order to encrypt
     a message, a random number ``a`` in ``range(2, p)``
-    is generated and the encryped message is returned as
+    is generated and the encrypted message is returned as
     `c_{1}` and `c_{2}` where:
 
     `c_{1} \equiv r^{a} \pmod p`

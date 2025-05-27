@@ -237,7 +237,7 @@ def reduce_rational_inequalities(exprs, gen, relational=True):
                 if expr.is_Relational:
                     expr, rel = expr.lhs - expr.rhs, expr.rel_op
                 else:
-                    expr, rel = expr, '=='
+                    rel = '=='
 
             if expr is S.true:
                 numer, denom, rel = S.Zero, S.One, '=='
@@ -305,7 +305,7 @@ def reduce_abs_inequality(expr, rel, gen):
     reduce_abs_inequalities
     """
     if gen.is_extended_real is False:
-         raise TypeError(filldedent('''
+        raise TypeError(filldedent('''
             Cannot solve inequalities with absolute values containing
             non-real variables.
             '''))

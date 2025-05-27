@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .basic import Atom, Basic
+from .coreerrors import LazyExceptionMessage
 from .sorting import ordered
 from .evalf import EvalfMixin
 from .function import AppliedUndef
@@ -51,6 +52,8 @@ def _canonical_coeff(rel):
     rel = rel.canonical
     if not rel.is_Relational or rel.rhs.is_Boolean:
         return rel  # Eq(x, True)
+    if not isinstance(rel.lhs, Expr):
+        return rel.reversed  # e.g.: Eq(True, x) -> Eq(x, True)
     b, l = rel.lhs.as_coeff_Add(rational=True)
     m, lhs = l.as_coeff_Mul(rational=True)
     rhs = (rel.rhs - b)/m
@@ -512,8 +515,12 @@ class Relational(Boolean, EvalfMixin):
         args = (arg.expand(**kwargs) for arg in self.args)
         return self.func(*args)
 
-    def __bool__(self):
-        raise TypeError("cannot determine truth value of Relational")
+    def __bool__(self) -> bool:
+        raise TypeError(
+            LazyExceptionMessage(
+                lambda: f"cannot determine truth value of Relational: {self}"
+            )
+        )
 
     def _eval_as_set(self):
         # self is univariate and periodicity(self, x) in (0, None)

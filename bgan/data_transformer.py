@@ -1,4 +1,18 @@
-"""DataTransformer module."""
+"""
+DataTransformer module.
+
+This file is part of the BGAN framework for tabular data synthesis and imputation.
+
+This class is inspired by and partially adapted from the CTGAN codebase:
+https://github.com/sdv-dev/CTGAN (MIT License).
+The column transformation, normalization, encoding, and inverse transformation logic
+are based on the CTGAN DataTransformer implementation, with modifications for BGAN.
+
+MIT License applies to portions derived from CTGAN:
+https://github.com/sdv-dev/CTGAN/blob/master/LICENSE
+
+-------------------------------------------------------------------------------
+"""
 
 from collections import namedtuple
 
@@ -15,10 +29,20 @@ ColumnTransformInfo = namedtuple(
 
 
 class DataTransformer(object):
-    """Data Transformer.
+    """
+    Data Transformer for tabular data.
 
-    Model continuous columns with a BayesianGMM and normalize them to a scalar between [-1, 1]
+    Models continuous columns with a BayesianGMM and normalizes them to a scalar between [-1, 1]
     and a vector. Discrete columns are encoded using a OneHotEncoder.
+
+    This class is adapted from the CTGAN DataTransformer, with modifications for
+    integration with the BGAN framework and additional documentation.
+
+    References:
+    - Xu, L., Skoularidou, M., Cuesta-Infante, A., & Veeramachaneni, K. (2019).
+      Modeling Tabular data using Conditional GAN. NeurIPS 2019.
+      [https://arxiv.org/abs/1907.00503]
+    - CTGAN codebase (MIT License): https://github.com/sdv-dev/CTGAN
     """
 
     def __init__(self, max_clusters=10, weight_threshold=0.005):

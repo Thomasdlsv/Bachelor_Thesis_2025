@@ -1,4 +1,16 @@
-"""BaseSynthesizer module."""
+"""
+BaseSynthesizer module.
+
+This file is part of the BGAN framework for tabular data synthesis and imputation.
+
+This class is from the CTGAN codebase:
+https://github.com/sdv-dev/CTGAN (MIT License).
+The random state management, save/load, and serialization logic are based on
+the CTGAN BaseSynthesizer implementation, with slight modifications for BGAN.
+
+MIT License applies to portions derived from CTGAN:
+https://github.com/sdv-dev/CTGAN/blob/master/LICENSE
+"""
 
 import contextlib
 
