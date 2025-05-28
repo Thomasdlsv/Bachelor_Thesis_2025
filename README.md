@@ -70,17 +70,17 @@ This repository contains code for benchmarking and evaluating synthetic data gen
   ```
 
   This script will:
-    - Load and preprocess the Fetal_Dataset (can adjust which dataset loaded from the 'datasets' folder in the main code).
-    - Define and configure several imputation methods (BGAIN, BN_AUG_Imputer, MICE, etc.).
-    - Run repeated evaluation of imputation quality and downstream impact.
-    - Aggregate and print results
+  - Load and preprocess the Fetal_Dataset (can adjust which dataset loaded from the 'datasets' folder in the main code).
+  - Define and configure several imputation methods (BGAIN, BN_AUG_Imputer, MICE, etc.).
+  - Run repeated evaluation of imputation quality and downstream impact.
+  - Aggregate and print results
 
 ---
    
 ## 4. Configurations
-    - **Experiment parameters** (number of repetitions, missing rates, random seed) can be set at the top of `tests/imputation_tests/main.py`.
-    - **Evaluation pipeline** missingness rates (10%, 20%,...), and missingness patterns (MCAR, MAR, MNAR) are handled in `tests/imputation_tests/configurations.py`.
-    - You can add or remove imputation methods and adjust missingness patterns as needed.
+  - Experiment parameters: (number of repetitions, missing rates, random seed) can be set at the top of `tests/imputation_tests/main.py`.
+  - Evaluation pipeline: missingness rates (10%, 20%,...) and missingness patterns (MCAR, MAR, MNAR) are handled in `tests/imputation_tests/configurations.py`.
+  - You can add or remove imputation methods and adjust missingness patterns as needed.
 
 ---
   
