@@ -58,6 +58,7 @@ This repository contains code for benchmarking and evaluating synthetic data gen
   - Output data distribution graphs for each feature in the dataset (and other miscellaneous visualisations) between BN-BGAN, BGAN, and the original dataset
     --> To skip this, comment out the call to the method 'evaluate_sdg' in tests/sdg_tests/main.py
   - Run a hyperparameter search comparing models with baselines, outputting performance metrics delineated in the report.
+  - Currently, the dataset size is sampled in running, this is to ensure that the code is running as intended. When you can confirm it's running as it should, then comment out the sampling of the training and evaluation sets, and run the code again. 
 
 ---
 
