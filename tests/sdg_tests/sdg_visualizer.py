@@ -596,4 +596,3 @@ class SDGVisualizer:
         plt.ylabel("|Δ Variance|")
         plt.tight_layout()
         plt.show()
-
