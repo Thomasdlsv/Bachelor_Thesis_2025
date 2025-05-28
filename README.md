@@ -51,13 +51,13 @@ This repository contains code for benchmarking and evaluating synthetic data gen
   ```
 
   This script will:
-    - Download and preprocess the Cancer_Dataset (can adjust which dataset loaded from the 'datasets' folder in the main code).
-    - Train and evaluate BGAN, BN-AUG-SDG, CTGAN, and other models.
-    - Output a DAG structure of the feature relationships everytime the BN-BGAN is trained
-        --> To skip this, comment out the call to plot_bn_structure inside the main method in tests/sdg_tests/main.py
-    - Output data distribution graphs for each feature in the dataset (and other miscellaneous visualisations) between BN-BGAN, BGAN, and the original dataset
-        --> To skip this, comment out the call to the method 'evaluate_sdg' in tests/sdg_tests/main.py
-    - Run a hyperparameter search comparing models with baselines, outputting performance metrics delineated in the report.
+  - Download and preprocess the Cancer_Dataset (can adjust which dataset loaded from the 'datasets' folder in the main code).
+  - Train and evaluate BGAN, BN-AUG-SDG, CTGAN, and other models.
+  - Output a DAG structure of the feature relationships everytime the BN-BGAN is trained
+    --> To skip this, comment out the call to plot_bn_structure inside the main method in tests/sdg_tests/main.py
+  - Output data distribution graphs for each feature in the dataset (and other miscellaneous visualisations) between BN-BGAN, BGAN, and the original dataset
+    --> To skip this, comment out the call to the method 'evaluate_sdg' in tests/sdg_tests/main.py
+  - Run a hyperparameter search comparing models with baselines, outputting performance metrics delineated in the report.
 
 ---
 
