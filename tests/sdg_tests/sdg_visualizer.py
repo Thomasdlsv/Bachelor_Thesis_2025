@@ -60,7 +60,6 @@ class SDGVisualizer:
         Plot correlation matrices for real, BGAN, and BN-AUG-SDG data side by side.
         """
 
-        import numpy as np
         real_data_numeric = real_data.select_dtypes(include=[np.number])
         bgan_data_numeric = bgan_data.select_dtypes(include=[np.number])
         bnaug_data_numeric = bnaug_data.select_dtypes(include=[np.number])
@@ -265,46 +264,37 @@ class SDGVisualizer:
 
         """Plot PCA visualization of real and synthetic data"""
 
-        # One-hot encode all datasets
         real_data_encoded = pd.get_dummies(real_data)
         bgan_data_encoded = pd.get_dummies(bgan_data)
         bnaug_data_encoded = pd.get_dummies(bnaug_data)
 
-        # Get union of all columns
         all_columns = sorted(set(real_data_encoded.columns) | 
                             set(bgan_data_encoded.columns) | 
                             set(bnaug_data_encoded.columns))
         
-        # Reindex and fill NaN with 0
         real_data_encoded = real_data_encoded.reindex(columns=all_columns).fillna(0)
         bgan_data_encoded = bgan_data_encoded.reindex(columns=all_columns).fillna(0)
         bnaug_data_encoded = bnaug_data_encoded.reindex(columns=all_columns).fillna(0)
 
-        # Combine data for PCA
         combined_data = pd.concat([real_data_encoded, bgan_data_encoded, bnaug_data_encoded])
         
-        # Scale the data before PCA
         scaler = StandardScaler()
         combined_scaled = scaler.fit_transform(combined_data)
 
-        # Apply PCA
         pca = PCA(n_components=2)
         pca_result = pca.fit_transform(combined_scaled)
 
-        # Split back into original datasets
         n_real = len(real_data)
         n_bgan = len(bgan_data)
         pca_real = pca_result[:n_real]
         pca_bgan = pca_result[n_real:n_real+n_bgan]
         pca_bnaug = pca_result[n_real+n_bgan:]
 
-        # Plot
         plt.figure(figsize=(10,8))
         plt.scatter(pca_real[:,0], pca_real[:,1], alpha=0.5, label='Real', c='blue', s=30)
         plt.scatter(pca_bgan[:,0], pca_bgan[:,1], alpha=0.5, label='BGAN', c='red', s=30)
         plt.scatter(pca_bnaug[:,0], pca_bnaug[:,1], alpha=0.5, label='BN-AUG-SDG', c='green', s=30)
         
-        # Add variance explained
         var_explained = pca.explained_variance_ratio_
         plt.xlabel(f'First PC ({var_explained[0]:.1%} variance explained)')
         plt.ylabel(f'Second PC ({var_explained[1]:.1%} variance explained)')
@@ -319,11 +309,10 @@ class SDGVisualizer:
         Compute the Maximum Mean Discrepancy (MMD) between two datasets.
         """
 
-        # Standardize
         scaler = StandardScaler()
         X_std = scaler.fit_transform(X)
         Y_std = scaler.transform(Y)
-        # Median heuristic for bandwidth if not provided
+        
         if kernel_bandwidth is None:
             sample = np.vstack([X_std, Y_std])
             dists = np.sqrt(((sample[:, None, :] - sample[None, :, :]) ** 2).sum(-1))
@@ -415,7 +404,7 @@ class SDGVisualizer:
         for fname, var in top_features:
             print(f"  {fname}: {var:.6f}")
 
-        return variances  # For plotting
+        return variances  
 
 
     def hyperparameter_search(real_train, real_eval, discrete_columns, bgan_param_grid, bnaug_param_grid, ctgan_param_grid, tvae_param_grid, gc_param_grid, max_runs, n_samples=1000):
@@ -429,7 +418,7 @@ class SDGVisualizer:
         def run_multiple(method_name, model_class, param_grid):
             for params in ParameterGrid(param_grid):
                 metric_runs = []
-                for run in range(1, 3):  # Max cap at 50
+                for run in range(1, max_runs):  
                     np.random.seed(run)
                     if method_name == "CTGAN":
                         model = model_class(**params)

@@ -53,7 +53,7 @@ class SignificanceTesting:
             seed = self.random_seed + run_idx
             print(f"\n=== Repetition {run_idx+1}/{self.n_repeats} with seed {seed} ===")
 
-            # Set the random state of the base evaluator to the new seed
+            # we set the random state of the base evaluator to the new seed defined
             self.base_evaluator.random_state = seed
 
             for missing_rate in missing_rates:
@@ -66,7 +66,7 @@ class SignificanceTesting:
 
                 if results is None:
                     print("Skipping this run due to no complete rows after dropping NaNs.")
-                    continue  # Skip to next run
+                    continue  # Skip to next run if no valid results
                 
                 # Append run and seed info to each result
                 for res in results['imputation_quality']:
@@ -78,11 +78,11 @@ class SignificanceTesting:
                     res['run'] = run_idx
                     all_impact_results.append(res)
 
-        # Convert to DataFrames
+        # Convert to DataFrames so we can easily manipulate and summarize
         quality_df = pd.DataFrame(all_quality_results)
         impact_df = pd.DataFrame(all_impact_results)
 
-        # Handle empty results gracefully
+        # Handle empty results by checking if DataFrames are empty and returning empty summaries
         if quality_df.empty or impact_df.empty:
             print("No results to summarize (all runs may have been skipped due to missing data).")
             return {
@@ -92,7 +92,7 @@ class SignificanceTesting:
                 'impact_summary': pd.DataFrame()
             }
 
-        # Aggregate results: mean and std by method, pattern, scenario, missing_rate
+        # AGGREGATE: mean and std by method, pattern, scenario, missing_rate
         quality_summary = quality_df.drop(columns=['run']).groupby(
             ['method', 'pattern', 'scenario', 'missing_rate']
         ).agg(['mean', 'std']).reset_index()
@@ -108,6 +108,7 @@ class SignificanceTesting:
             'impact_summary': impact_summary
         }
 
+# can be called, not used in the current script
 def plot_metric(df, metric, title, ylabel, hue='method'):
         """
         Plots a barplot with error bars showing mean ± std for a given metric.
@@ -130,13 +131,13 @@ def plot_metric(df, metric, title, ylabel, hue='method'):
             data=plot_df,
             x='pattern', y='y', hue=hue,
             capsize=0.1,
-            errorbar=None  # Seaborn >=0.12; leave off if older
-        )
+            errorbar=None  
+        ) 
 
-        # Add manual error bars
+        # add manual error bars
         for i, row in plot_df.iterrows():
             plt.errorbar(
-                x=i % len(plot_df['pattern'].unique()),  # align bar x-axis
+                x=i % len(plot_df['pattern'].unique()),  
                 y=row['y'],
                 yerr=row['yerr'],
                 fmt='none',
@@ -167,9 +168,10 @@ if __name__ == "__main__":
     """
 
     # === Experiment Parameters ===
-    n_repeats = 15 # Number of repetitions 
-    missing_rates = [0.1, 0.2] # Proportion of missingness to simulate
+    n_repeats = 2 # Number of repetitions 
+    missing_rates = [0.1] # Proportion of missingness to simulate
     random_seed = 42 # For reproducibility
+    EPOCHS = 1
 
     # === Data Loading and Preprocessing ===
     # Load ARFF data
@@ -184,7 +186,7 @@ if __name__ == "__main__":
         try:
             df[col] = df[col].str.decode('utf-8')
         except AttributeError:
-            pass  # Already string
+            pass  # this means that it's already string
 
     target_col = 'Class'
     X = df.drop(columns=target_col)
@@ -201,14 +203,16 @@ if __name__ == "__main__":
         ),
         'MeanMode': SimpleImputer(strategy='mean'),
         'MICE': IterativeImputer(random_state=0, sample_posterior=False, max_iter=10),
-        'BGAIN': BGAIN(epochs=25),
-        'BN_AUG_Imputer': BN_AUG_Imputer(epochs=25)
+        'BGAIN': BGAIN(epochs=EPOCHS),
+        'BN_AUG_Imputer': BN_AUG_Imputer(epochs=EPOCHS)
     }
-    # Ensure all imputers have a unified interface, for ease of evaluation
+    # Ensure all imputers have a unified interface, for ease of evaluation (for comptability inside the evaluation class)
     for imputer in imputation_methods.values():
         if not hasattr(imputer, "impute_all_missing"):
             imputer.impute_all_missing = imputer.transform
 
+    # Can extend logic to regression tasks too, but datasets would need to be adjusted accordingly, and configurations.py would need to be adjusted slightly too, refer to the class for more details
+    # === Evaluation Setup ===
     evaluator = Evaluation(imputation_methods, model_type='classification', discrete_columns=discrete_columns)
 
     multi_run_eval = SignificanceTesting(evaluator, n_repeats=n_repeats, random_seed=random_seed)
@@ -225,25 +229,3 @@ if __name__ == "__main__":
     impact_summary = results['impact_summary']
     quality_summary.columns = ['_'.join(col).strip('_') for col in quality_summary.columns.values]
     impact_summary.columns = ['_'.join(col).strip('_') for col in impact_summary.columns.values]
-
-    # Plot imputation quality (RMSE)
-    if not quality_summary.empty and 'continuous_rmse_mean' in quality_summary.columns:
-        plot_metric(
-            quality_summary,
-            metric='continuous_rmse',
-            title='Imputation RMSE by Method and Pattern',
-            ylabel='RMSE (↓ better)'
-        )
-    else:
-        print("No imputation quality results to plot.")
-
-    # Plot downstream task impact
-    if not impact_summary.empty and 'impact_on_downstream_task_mean' in impact_summary.columns:
-        plot_metric(
-            impact_summary,
-            metric='impact_on_downstream_task',
-            title='Impact on Downstream Task by Method and Pattern',
-            ylabel='Downstream Impact (↑ better)'
-        )
-    else:
-        print("No downstream impact results to plot.")

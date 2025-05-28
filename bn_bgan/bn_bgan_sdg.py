@@ -218,7 +218,7 @@ class BGANWithBN(BGAN):
         bn_influence=0.1,
         embedding_dim=256,
         **kwargs):
-        # Initialize base attributes before super().__init__
+
         self._embedding_dim = embedding_dim
         self.use_bn = batch_norm
         self.bn_structure = None

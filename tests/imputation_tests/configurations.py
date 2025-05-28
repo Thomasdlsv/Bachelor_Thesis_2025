@@ -102,6 +102,7 @@ class Evaluation:
         if use_imputed_train and imputer is not None:
             X_train = imputer.impute_all_missing(X_train)
 
+        # can use other classifiers/regressors here
         if self.model_type == 'classification':
             self.baseline_model = RandomForestClassifier(
                 n_estimators=100,
@@ -111,6 +112,7 @@ class Evaluation:
                 random_state=self.random_state
             )
         else:
+        # adjust the parameters for regression to ensure good performance
             self.baseline_model = RandomForestRegressor(random_state=self.random_state)
 
         self.baseline_model.fit(X_train, y_train)
@@ -131,7 +133,7 @@ class Evaluation:
         
         results = {'method': method_name}
         
-        # Evaluate discrete columns with F1
+        # we evaluate the discrete columns with F1
         if discrete_cols:
             f1_scores = []
             for col in discrete_cols:
@@ -145,7 +147,7 @@ class Evaluation:
             else:
                 results['discrete_f1'] = None
 
-        # Evaluate continuous columns with RMSE
+        # and otherwise, the continuous columns are evaluated with RMSE
         if continuous_cols:
             rmses = []
             for col in continuous_cols:
@@ -159,7 +161,7 @@ class Evaluation:
             else:
                 results['continuous_rmse'] = None
 
-        # Evaluate downstream task metric (classification/regression) on imputed data
+        # Finally, we evaluate the downstream task metric (classification/regression) on imputed data
         y_pred = self.baseline_model.predict(X_imputed)
         if self.model_type == 'classification':
             f1 = f1_score(y_true, y_pred, average='macro')
@@ -187,6 +189,8 @@ class Evaluation:
             metric = 'downstream_f1'
         else:
             metric = 'downstream_rmse'
+
+        # would need to define regression metrics if model_type is regression
 
         baseline_score = baseline_result.get(metric)
         incomplete_score = incomplete_result.get(metric)
@@ -227,10 +231,10 @@ class Evaluation:
                     missing_rate=missing_rate
                 )
 
+                # ensure test set has missing values
                 print(f"Missing values in test set: {X_test_corrupted.isna().sum().sum()}")  # Debug line
 
-
-                # Apply missingness to training set
+                # apply missingness to training set
                 if scenario == 'complete_train':
                     X_train = X_train_full.dropna()
                     y_train = y_train_full[X_train.index]
@@ -243,7 +247,7 @@ class Evaluation:
                     )
                     y_train = y_train_full
 
-                # Drop rows with NaNs before fitting model
+                # drop rows with NaNs before fitting model
                 X_train_clean = X_train.dropna()
                 y_train_clean = y_train[X_train_clean.index]
 
@@ -272,14 +276,14 @@ class Evaluation:
 
                     # Define proper training data for imputation
                     if scenario == 'complete_train':
-                        X_train_for_imputation = X_train  # Already complete
+                        X_train_for_imputation = X_train  # complete
                         y_train_for_model = y_train
 
                     elif scenario == 'incomplete_train':
-                        X_train_for_imputation = X_train  # Contains missing values
+                        X_train_for_imputation = X_train  # has missing values
                         y_train_for_model = y_train
 
-                    # Detect continuous vs discrete columns
+                    # check continuous vs discrete columns
                     continuous_cols = [col for col in X_train_for_imputation.columns if col not in (self.discrete_columns or [])]
 
                     # Special handling for BGAIN
@@ -300,11 +304,11 @@ class Evaluation:
                             imputer.fit(X_train_for_imputation)
 
 
-                    # Impute both training and test data
+                    # impute both training and test data using same method call
                     X_train_imputed = imputer.impute_all_missing(X_train_for_imputation)
                     X_test_imputed = imputer.impute_all_missing(X_test_corrupted)
 
-                    # Only evaluate test rows where imputation happened
+                    # we only evaluate test rows where imputation happened, because we want to see the impact of imputation
                     missing_rows_mask = X_test_corrupted.isna().any(axis=1)
                     if missing_rows_mask.sum() == 0:
                         print("  No missing values in test set to evaluate.")
@@ -314,14 +318,14 @@ class Evaluation:
                     X_test_subset = X_test_corrupted[missing_rows_mask]
                     X_test_imputed_subset = X_test_imputed[missing_rows_mask]
 
-                    # Evaluate imputation quality
+                    # now we evaluate imputation quality
                     quality_result = self.evaluate_imputation_quality(
                         X_test_subset, y_test_subset, method_name, X_test_imputed_subset
                     )
                     quality_result.update({'pattern': pattern, 'scenario': scenario})
                     results['imputation_quality'].append(quality_result)
 
-                    # Evaluate downstream impact using imputed train + test
+                    # finally, we evaluate the downstream impact using imputed train + test
                     impact_result = self.evaluate_impact_on_downstream_task(
                         X_train_for_imputation, y_train_for_model,
                         X_test_subset, y_test_subset,

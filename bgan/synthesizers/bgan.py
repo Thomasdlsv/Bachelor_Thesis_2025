@@ -167,7 +167,7 @@ class Generator(nn.Module):
             nn.Softplus()
         )
 
-        # Optional: BN-guided soft guidance
+        # BN-guided soft guidance
         if bn_structure:
             self.bn_transforms = nn.ModuleDict()
             for node, parents in bn_structure.items():
@@ -325,9 +325,9 @@ class BGAN(BaseSynthesizer):
         self._verbose = verbose
         self._epochs = epochs
         self.pac = pac
-        self._kl_weight = kl_weight  # KL divergence weight
+        self._kl_weight = kl_weight  
 
-        self._beta = beta  # we init the beta here
+        self._beta = beta  
         
 
 
@@ -438,7 +438,7 @@ class BGAN(BaseSynthesizer):
                     st = ed
                     st_c = ed_c
 
-        loss = torch.stack(loss, dim=1)  # noqa: PD013
+        loss = torch.stack(loss, dim=1)  
 
         return (loss * m).sum() / data.size()[0]
 
@@ -543,7 +543,7 @@ class BGAN(BaseSynthesizer):
             batch_size = self._batch_size
             mean = torch.zeros(batch_size, embedding_dim, device=self._device)
             std = torch.ones(batch_size, embedding_dim, device=self._device)  # Use ones instead of mean + 1
-            kl_anneal_epochs = 15  # you can tune this
+            kl_anneal_epochs = 15  # you can tune this (MAKE SURE TO KEEP CONSISTENT THROUGHOUT CLASS)
 
 
             # Initialize loss values dataframe
@@ -641,8 +641,7 @@ class BGAN(BaseSynthesizer):
 
                     cross_entropy = 0 if condvec is None else self._cond_loss(fake, c1, m1)
 
-                    #ABLATION STUDY -- SET UNCERTAINTY LOSS = 0 
-
+                    # ABLATION STUDY -- REMOVE UNCERTAINTY AND KL LOSSES HERE
                     uncertainty_loss = torch.mean(torch.log(uncertainty_map ** 2 + 1e-8)) if self.use_uncertainty_loss else 0.0 # avoid log(0)
 
                     #kl_annealed_weight = self._kl_weight * min(1.0, i / kl_anneal_epochs)

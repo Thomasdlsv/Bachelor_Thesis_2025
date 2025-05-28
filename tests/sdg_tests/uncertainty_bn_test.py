@@ -22,6 +22,13 @@ from bn_bgan.bn_bgan_sdg import BN_AUG_SDG
 # ======================================================================================================================
 
 if __name__ == "__main__":
+    '''
+    This script evaluates the impact of different bayesian network influences on the uncertainty of synthetic data generated
+    by the BN-AUG-SDG model. It runs multiple trials with varying parameters, computes the mean variance of the synthetic data,
+    and checks for convergence using the standard error of the mean (SEM). Finally, it performs a statistical test to determine
+    if there are significant differences in uncertainty across different batch normalization influences.
+    '''
+
     #Load real data and preprocess
     real_data = pd.read_csv("http://ctgan-demo.s3.amazonaws.com/census.csv.gz")
     discrete_columns = real_data.select_dtypes(include=['object', 'category']).columns.tolist()
@@ -43,8 +50,7 @@ if __name__ == "__main__":
          #'bn_influence': [0.1, 0.5, 0.9]
     }
 
-
-    # Compare uncertainty metrics for different bn_influence values
+    # compare uncertainty metrics for different bn_influence values
     bnaug_uncertainty = []
     for params in ParameterGrid(bnaug_param_grid):
         mean_uncertainties = []

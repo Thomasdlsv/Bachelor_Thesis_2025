@@ -152,7 +152,7 @@ class BGAIN(BaseSynthesizer):
                     st = ed
                     st_c = ed_c
 
-        loss = torch.stack(loss, dim=1)  # noqa: PD013
+        loss = torch.stack(loss, dim=1)  
 
         return (loss * m).sum() / data.size()[0]
 
@@ -257,9 +257,8 @@ class BGAIN(BaseSynthesizer):
             embedding_dim = self._embedding_dim
             batch_size = self._batch_size
             mean = torch.zeros(batch_size, embedding_dim, device=self._device)
-            std = torch.ones(batch_size, embedding_dim, device=self._device)  # Use ones instead of mean + 1
-            kl_anneal_epochs = 15  # you can tune this
-
+            std = torch.ones(batch_size, embedding_dim, device=self._device)  
+            kl_anneal_epochs = 15  # CAN BE TUNED AND EXPERIMENTED WITH, KEPT AT 15 THROUGHOUT THIS EXPERIMENTAITON
 
             # Initialize loss values dataframe
             self.loss_values = pd.DataFrame({
@@ -297,7 +296,6 @@ class BGAIN(BaseSynthesizer):
                             c1, m1, col, opt = condvec
                             c1 = torch.from_numpy(c1).to(self._device)
                             m1 = torch.from_numpy(m1).to(self._device)
-                            # fakez already has correct shape, so no need to concatenate c1 again
 
                             perm = np.arange(self._batch_size)
                             np.random.shuffle(perm)
@@ -360,8 +358,6 @@ class BGAIN(BaseSynthesizer):
 
                     #kl_annealed_weight = self._kl_weight * min(1.0, i / kl_anneal_epochs)
                     loss_g = -torch.mean(y_fake) + cross_entropy + self._beta * uncertainty_loss + kl_annealed_weight * kl_loss
-
-
 
                     optimizerG.zero_grad(set_to_none=False)
                     loss_g.backward()
