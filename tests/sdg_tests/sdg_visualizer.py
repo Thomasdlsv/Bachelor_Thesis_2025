@@ -491,7 +491,6 @@ class SDGVisualizer:
         """
         Compute MMD, diversity, indistinguishability, uncertainty, and KL divergence metrics.
         """
-        # You can expand this to include all your metrics
         real_eval_enc = pd.get_dummies(real_eval)
         synthetic_enc = pd.get_dummies(synthetic)
         cols = sorted(set(real_eval_enc.columns) | set(synthetic_enc.columns))
