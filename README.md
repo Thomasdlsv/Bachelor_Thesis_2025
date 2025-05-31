@@ -64,6 +64,11 @@ This repository contains code for benchmarking and evaluating synthetic data gen
   python -m tests.sdg_tests.main
   ```
 
+  ```bash
+  python -m tests.sdg_tests.uncertainty_bn_test
+  ```
+  
+
   This script will:
   - Download and preprocess the Cancer_Dataset (can adjust which dataset loaded from the 'datasets' folder in the main code).
   - Train and evaluate BGAN, BN-AUG-SDG, CTGAN, and other models.
