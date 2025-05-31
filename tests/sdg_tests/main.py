@@ -235,7 +235,7 @@ if __name__ == "__main__":
         n_samples=N_SAMPLES
     )
     print("\n=== Hyperparameter Search Results ===")
-    print(search_results.to_string)
+    print(search_results.to_string(index=False)
 
     print("\n=== Hyperparameter Search Results (MMD & Diversity) ===")
     print(
