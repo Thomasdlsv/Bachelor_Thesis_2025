@@ -71,22 +71,33 @@ class BN_AUG_Imputer:
         """
 
         X_filled = X.copy()
-        for col in X.columns:
+        
+        # First check if we have any missing values
+        missing_cols = X.columns[X.isnull().any()].tolist()
+        if not missing_cols:
+            print("No missing values found in initial imputation")
+            return X_filled
+            
+        print(f"Performing initial imputation for columns: {missing_cols}")
+        
+        for col in missing_cols:
+            print(f"Imputing column: {col}")
             if col in self.model.node_importance:
                 parents = self.model.node_importance[col].keys()
                 if all(p in X.columns for p in parents):
                     try:
                         complete_parent_rows = X[parents + [col]].dropna()
                         if complete_parent_rows.empty:
-                            raise ValueError()
+                            raise ValueError(f"No complete rows found for {col} and its parents")
                         grouped = complete_parent_rows.groupby(list(parents))[col].agg(
                             lambda x: x.mode()[0] if x.dtype == 'object' else x.median()
                         )
-                        for idx in X_filled.index[X[col].isnull()]:
+                        missing_idx = X_filled.index[X[col].isnull()]
+                        for idx in missing_idx:
                             parent_vals = tuple(X.loc[idx, parents])
                             if parent_vals in grouped:
                                 X_filled.loc[idx, col] = grouped[parent_vals]
-                                continue
+                                print(f"Parent-based imputation successful for {len(missing_idx)} values in {col}")
                     except:
                         pass
 
@@ -131,27 +142,62 @@ class BN_AUG_Imputer:
 
         if self.model is None:
             raise RuntimeError("Model not trained. Call `fit` first.")
+            
+        # Verify we have missing values to impute
+        missing_mask = X.isnull()
+        if not missing_mask.any().any():
+            print("Warning: No missing values found in input data")
+            return X.copy()
 
         X = X.copy()
         missing_mask = X.isnull()
+        
+        # Early return if no missing values
+        if not missing_mask.any().any():
+            print("Warning: No missing values found in input data")
+            return X
+
         X_filled = self._initial_impute(X)
+        
+        # Keep track of which values were originally missing
+        original_missing = missing_mask.copy()
 
         for pass_num in range(refine_passes):
             imputations = []
             for _ in range(n_iter):
-                # Each sample_conditionally call generates a new stochastic imputation
-                X_imp = self.model.sample_conditionally(X_filled, missing_mask)
-                if not isinstance(X_imp, pd.DataFrame):
-                    X_imp = pd.DataFrame(X_imp, columns=X.columns, index=X.index)
-                imputations.append(X_imp)
+                try:
+                    # Each sample_conditionally call generates a new stochastic imputation
+                    X_imp = self.model.sample_conditionally(X_filled, original_missing)
+                    if not isinstance(X_imp, pd.DataFrame):
+                        X_imp = pd.DataFrame(X_imp, columns=X.columns, index=X.index)
+                    imputations.append(X_imp)
+                except Exception as e:
+                    print(f"Warning: Sampling iteration failed: {str(e)}")
+                    continue
+
+            if not imputations:
+                print("Warning: All sampling iterations failed")
+                continue
 
             # Stack and average imputations for missing values
-            imputations = np.stack([imp.values for imp in imputations], axis=0)  # shape: (n_iter, n_rows, n_cols)
-            imputed_mean = np.nanmean(imputations, axis=0)
+            try:
+                imputations = np.stack([imp.values for imp in imputations], axis=0)  # shape: (n_iter, n_rows, n_cols)
+                imputed_mean = np.nanmean(imputations, axis=0)
 
-            # Fill only missing values with the mean, keep observed values as is
-            for i, col in enumerate(X.columns):
-                X_filled.loc[missing_mask[col], col] = imputed_mean[missing_mask[col].values, i]
+                # Fill only missing values with the mean, keep observed values as is
+                for i, col in enumerate(X.columns):
+                    if original_missing[col].any():  # Only update if column had missing values
+                        missing_idx = original_missing[col]
+                        if pd.api.types.is_numeric_dtype(X[col].dtype):
+                            X_filled.loc[missing_idx, col] = imputed_mean[missing_idx.values, i]
+                        else:
+                            # For categorical columns, use mode of imputations
+                            imp_vals = np.array([imp[missing_idx.values, i] for imp in imputations])
+                            modes = [pd.Series(imp_vals[:, j]).mode()[0] for j in range(imp_vals.shape[1])]
+                            X_filled.loc[missing_idx, col] = modes
+            except Exception as e:
+                print(f"Warning: Failed to update imputations in pass {pass_num}: {str(e)}")
+                continue
 
         return self._postprocess(X_filled)
 
@@ -185,8 +231,30 @@ class BN_AUG_Imputer:
         self.fit(X)
         return self.transform(X, max_iter=max_iter)
 
-    def get_gate_log(self):
+    def transform(self, X, max_iter=10):
+        """
+        Transform method for imputing missing values.
+        
+        Args:
+            X: Input data with missing values
+            max_iter: Maximum iterations (not used, for compatibility)
+            
+        Returns:
+            Imputed DataFrame
+        """
+        if not isinstance(X, pd.DataFrame):
+            X = pd.DataFrame(X, columns=self.original_columns)
+            
+        # Check for missing values
+        missing_mask = X.isnull()
+        if not missing_mask.any().any():
+            print("Warning: No missing values found in transform input")
+            return X.copy()
+            
+        print(f"Transforming data with {missing_mask.sum().sum()} missing values")
+        return self.impute_all_missing(X)
 
+    def get_gate_log(self):
         """
         Get the gate log from the underlying BN_AUG_SDG model.
 

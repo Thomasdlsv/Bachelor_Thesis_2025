@@ -72,12 +72,14 @@ if __name__ == "__main__":
             variances = np.var(synthetic_scaled, axis=0)
             mean_uncertainty = np.mean(variances)
             mean_uncertainties.append(mean_uncertainty)
+            # read bn_influence safely (ParameterGrid may not include it)
+            bn_inf = params.get("bn_influence", 0.0)
             bnaug_uncertainty.append({
-                "bn_influence": params["bn_influence"],
+                "bn_influence": bn_inf,
                 "mean_uncertainty": mean_uncertainty,
                 "seed": seed
             })
-            print(f"Mean variance (uncertainty): {mean_uncertainty:.6f}")
+            print(f"Mean variance (uncertainty): {mean_uncertainty:.6f} (bn_influence={bn_inf})")
 
             # Check convergence
             if len(mean_uncertainties) >= 5:
@@ -115,6 +117,10 @@ if __name__ == "__main__":
 
     # Prepare data for statistical test
     groups = []
+    # handle missing bn_influence gracefully by filling NaNs with a string label
+    if uncertainty_df["bn_influence"].isnull().any():
+        uncertainty_df["bn_influence"] = uncertainty_df["bn_influence"].fillna("none")
+
     for bn_inf in sorted(uncertainty_df["bn_influence"].unique()):
         vals = uncertainty_df.loc[uncertainty_df["bn_influence"] == bn_inf, "mean_uncertainty"].values
         print(f"bn_influence={bn_inf}: n={len(vals)}")

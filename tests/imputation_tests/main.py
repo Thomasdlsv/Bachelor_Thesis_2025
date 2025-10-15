@@ -10,6 +10,14 @@ from bgan.utility.bgan_imp import BGAIN
 from bn_bgan.bn_bgan_imp import BN_AUG_Imputer
 from tests.imputation_tests.configurations import Evaluation
 from sklearn.ensemble import RandomForestRegressor
+import os
+import sys
+
+# Ensure repo root is on sys.path so local packages (bgan, bn_bgan) can be imported
+# main.py is in tests/imputation_tests, so go up two levels to reach project root
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 class SignificanceTesting:
 
@@ -93,13 +101,65 @@ class SignificanceTesting:
             }
 
         # AGGREGATE: mean and std by method, pattern, scenario, missing_rate
-        quality_summary = quality_df.drop(columns=['run']).groupby(
-            ['method', 'pattern', 'scenario', 'missing_rate']
-        ).agg(['mean', 'std']).reset_index()
-
-        impact_summary = impact_df.drop(columns=['run']).groupby(
-            ['method', 'pattern', 'scenario', 'missing_rate']
-        ).agg(['mean', 'std']).reset_index()
+        metrics_to_summarize = ['continuous_rmse', 'discrete_f1', 'downstream_f1', 'impact_on_downstream_task']
+        
+        # First create summary for quality metrics
+        quality_metrics = {}
+        for metric in ['continuous_rmse', 'discrete_f1', 'downstream_f1']:
+            if metric in quality_df.columns:
+                grouped = quality_df.groupby(['method', 'pattern', 'scenario', 'missing_rate'])
+                mean_vals = grouped[metric].mean().reset_index()
+                std_vals = grouped[metric].std().reset_index()
+                
+                # Rename columns
+                mean_vals = mean_vals.rename(columns={metric: f'{metric}_mean'})
+                std_vals = std_vals.rename(columns={metric: f'{metric}_std'})
+                
+                # Merge mean and std
+                quality_metrics[metric] = mean_vals.merge(
+                    std_vals[['method', 'pattern', 'scenario', 'missing_rate', f'{metric}_std']], 
+                    on=['method', 'pattern', 'scenario', 'missing_rate']
+                )
+        
+        # Merge all quality metrics together
+        if quality_metrics:
+            quality_summary = quality_metrics[list(quality_metrics.keys())[0]]
+            for metric in list(quality_metrics.keys())[1:]:
+                quality_summary = quality_summary.merge(
+                    quality_metrics[metric], 
+                    on=['method', 'pattern', 'scenario', 'missing_rate']
+                )
+        else:
+            quality_summary = pd.DataFrame()
+            
+        # Then create summary for impact metrics
+        impact_metrics = {}
+        for metric in ['impact_on_downstream_task']:
+            if metric in impact_df.columns:
+                grouped = impact_df.groupby(['method', 'pattern', 'scenario', 'missing_rate'])
+                mean_vals = grouped[metric].mean().reset_index()
+                std_vals = grouped[metric].std().reset_index()
+                
+                # Rename columns
+                mean_vals = mean_vals.rename(columns={metric: f'{metric}_mean'})
+                std_vals = std_vals.rename(columns={metric: f'{metric}_std'})
+                
+                # Merge mean and std
+                impact_metrics[metric] = mean_vals.merge(
+                    std_vals[['method', 'pattern', 'scenario', 'missing_rate', f'{metric}_std']], 
+                    on=['method', 'pattern', 'scenario', 'missing_rate']
+                )
+                    
+        # Merge all impact metrics together
+        if impact_metrics:
+            impact_summary = impact_metrics[list(impact_metrics.keys())[0]]
+            for metric in list(impact_metrics.keys())[1:]:
+                impact_summary = impact_summary.merge(
+                    impact_metrics[metric], 
+                    on=['method', 'pattern', 'scenario', 'missing_rate']
+                )
+        else:
+            impact_summary = pd.DataFrame()
 
         return {
             'quality_raw': quality_df,
@@ -168,32 +228,59 @@ if __name__ == "__main__":
     """
 
     # === Experiment Parameters ===
-    n_repeats = 2 # Number of repetitions 
-    missing_rates = [0.1] # Proportion of missingness to simulate
-    random_seed = 42 # For reproducibility
-    EPOCHS = 1
+    n_repeats = 5  # Number of repetitions 
+    missing_rates = [0.3, 0.5]  # Proportion of missingness to simulate
+    random_seed = 42  # For reproducibility
+    EPOCHS = 25  # Increased for better convergence
 
     # === Data Loading and Preprocessing ===
-    # Load ARFF data
-    # Can change the dataset to any dataset (refer to datasets folder)
-    data, meta = arff.loadarff('datasets/Fetal_Dataset.arff')
-    df = pd.DataFrame(data)
-
+    # Specify dataset paths and their corresponding target columns
+    dataset_configs = [
+        {
+            'path': 'new_datasets/baseline_heart_disease_dataset',
+            'target_col': 'diag',
+            'discrete_cols': ['sex', 'cp', 'fbs', 'restecg', 'exang', 'slope', 'ca', 'thal']
+        },
+        {
+            'path': 'new_datasets/large_diabetes_dataset',
+            'target_col': 'diabetes',
+            'discrete_cols': ['gender', 'smoking', 'heart_disease', 'hypertension']
+        },
+        {
+            'path': 'new_datasets/mixed_data_hepatisis_dataset',
+            'target_col': 'Category',
+            'discrete_cols': ['Sex', 'Steroid', 'Antivirals', 'Fatigue', 'Malaise', 'Anorexia', 'LiverBig', 'LiverFirm', 
+                            'SpleenPalpable', 'Spiders', 'Ascites', 'Varices']
+        }
+    ]
+    
+    # Select which dataset to use
+    dataset = dataset_configs[0]  # Using heart disease dataset
+    
+    # Load CSV data from the selected dataset directory
+    df = pd.read_csv(dataset['path'])
     print("Loaded columns:", df.columns)
     
-    # Convert byte columns to string (if needed)
-    for col in df.select_dtypes([object]).columns:
-        try:
-            df[col] = df[col].str.decode('utf-8')
-        except AttributeError:
-            pass  # this means that it's already string
-
-    target_col = 'Class'
+    target_col = dataset['target_col']
+    discrete_columns = dataset['discrete_cols']
+    
+    # Split features and target
     X = df.drop(columns=target_col)
     y = df[target_col]
-
-    X = pd.get_dummies(X)
-    discrete_columns = []
+    
+    # Convert target to numeric if needed
+    if y.dtype == bool:
+        y = y.astype(int)
+    elif y.dtype == object:
+        # Handle categorical target
+        y = pd.Categorical(y).codes
+    
+    # Get dummies only for non-discrete columns that are object type
+    non_discrete_cols = [col for col in X.columns if col not in discrete_columns]
+    X_dummies = pd.get_dummies(X[non_discrete_cols])
+    
+    # Combine with discrete columns
+    X = pd.concat([X[discrete_columns], X_dummies], axis=1)
 
     # === Define Imputation Methods ===
     imputation_methods = {
@@ -213,13 +300,12 @@ if __name__ == "__main__":
 
     # Can extend logic to regression tasks too, but datasets would need to be adjusted accordingly, and configurations.py would need to be adjusted slightly too, refer to the class for more details
     # === Evaluation Setup ===
-    evaluator = Evaluation(imputation_methods, model_type='classification', discrete_columns=discrete_columns)
+    evaluator = Evaluation(imputation_methods, model_type='classification', discrete_columns=discrete_columns, dataset_name=dataset_configs[0]['name'])
 
     multi_run_eval = SignificanceTesting(evaluator, n_repeats=n_repeats, random_seed=random_seed)
 
     # === Run Evaluation ===
-    # You can adjust dependent_column/target_column as needed for your dataset
-    results = multi_run_eval.run(X, y, missing_rates, dependent_column='V1', target_column='V1')
+    results = multi_run_eval.run(X, y, missing_rates, target_column=target_col)
 
     # === Output Results ===
     print(results['quality_summary'])
