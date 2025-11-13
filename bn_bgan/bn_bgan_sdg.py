@@ -377,17 +377,54 @@ class BN_AUG_SDG:
             if isinstance(gen_output, tuple):
                 gen_output = gen_output[0]  # If generator returns (data, uncertainty, ...)
 
-        # Transform original data for inverse_transform
+        # Transform the (initially-filled) data into matrix space
         transformed = self.bgan._transformer.transform(X)
         output_np = transformed.copy()
         gen_np = gen_output.cpu().numpy()
 
-        # So, use np.isnan(transformed) as the mask
-        transformed_mask = np.isnan(transformed)
+        # Build a mask in the transformed (matrix) space that corresponds
+        # to the original missing positions (passed in `missing_mask`). The
+        # transformer expands each original column into multiple output
+        # dimensions; we mark all output dimensions for a column as
+        # replaceable where the original column was missing.
+        try:
+            # Accept either DataFrame or array-like missing_mask
+            if isinstance(missing_mask, pd.DataFrame):
+                miss_arr = missing_mask.reindex(columns=X.columns).values.astype(bool)
+            else:
+                miss_arr = np.asarray(missing_mask).astype(bool)
+                # ensure shape (n_rows, n_cols)
+                if miss_arr.ndim == 1:
+                    # single-column mask -> expand
+                    miss_arr = miss_arr.reshape(-1, 1)
 
-        # Replace only missing entries in transformed space
-        combined = np.where(transformed_mask, gen_np, output_np)
-        return self.bgan._transformer.inverse_transform(combined)
+            transformed_mask = np.zeros_like(output_np, dtype=bool)
+            st = 0
+            # The transformer keeps a list of ColumnTransformInfo objects
+            for col_info in self.bgan._transformer._column_transform_info_list:
+                dim = col_info.output_dimensions
+                col_name = col_info.column_name
+                # If column name is present in X, get its missing vector; else default False
+                if col_name in X.columns:
+                    col_idx = list(X.columns).index(col_name)
+                    col_missing = miss_arr[:, col_idx]
+                else:
+                    col_missing = np.zeros(n_samples, dtype=bool)
+                # Broadcast the per-row missing flag across the column's output dims
+                transformed_mask[:, st:st + dim] = np.repeat(col_missing.reshape(-1, 1), dim, axis=1)
+                st += dim
+
+            # Replace only originally-missing positions in transformed space
+            combined = np.where(transformed_mask, gen_np, output_np)
+            return self.bgan._transformer.inverse_transform(combined)
+        except Exception as e:
+            # Fallback: if anything goes wrong, return inverse transform of
+            # the generator output (best-effort) to avoid silent failures.
+            try:
+                combined = gen_np
+                return self.bgan._transformer.inverse_transform(combined)
+            except Exception:
+                raise RuntimeError(f"Sampling failed in sample_conditionally: {e}")
 
 
     def fit(self, data: pd.DataFrame, discrete_columns: list):

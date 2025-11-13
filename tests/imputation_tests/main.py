@@ -5,10 +5,10 @@ import numpy as np
 import pandas as pd
 from scipy.io import arff
 from sklearn.impute import SimpleImputer
+from .configurations import Evaluation  # Add the import
 
 from bgan.utility.bgan_imp import BGAIN
 from bn_bgan.bn_bgan_imp import BN_AUG_Imputer
-from tests.imputation_tests.configurations import Evaluation
 from sklearn.ensemble import RandomForestRegressor
 import os
 import sys

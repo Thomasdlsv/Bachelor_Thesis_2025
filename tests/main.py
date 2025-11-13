@@ -1,3 +1,10 @@
+
+
+
+
+
+
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -13,23 +20,28 @@ from bgan.utility.bgan_imp import BGAIN
 from bn_bgan.bn_bgan_imp import BN_AUG_Imputer
 from tests.imputation_tests.configurations import Evaluation
 from tests.imputation_tests.main import SignificanceTesting, plot_metric
+from tests.uncertainty_analysis import UncertaintyAnalysis
 
 # ==========================
 # Experiment Configuration
 # ==========================
 DATASETS = [
-    #{"name": "hepatitis", "path": r"C:\Users\thoma\Desktop\Publication\Bachelor_Thesis_2025\new_datasets\mixed_data_hepatisis_dataset", "target": "Category"},
-    #{"name": "heart", "path": r"C:\Users\thoma\Desktop\Publication\Bachelor_Thesis_2025\new_datasets\baseline_heart_disease_dataset", "target": "diag"},
+    #{"name": "diabetes", "path": r"C:\Users\thoma\Desktop\Publication\Bachelor_Thesis_2025\new_datasets\diabetes_v2", "target": "EarlyReadmission"},
+    {"name": "hepatitis", "path": r"C:\Users\thoma\Desktop\Publication\Bachelor_Thesis_2025\new_datasets\mixed_data_hepatisis_dataset", "target": "Category"},
+    {"name": "heart", "path": r"C:\Users\thoma\Desktop\Publication\Bachelor_Thesis_2025\new_datasets\baseline_heart_disease_dataset", "target": "diag"},
     #{"name": "diabetes", "path": r"C:\Users\thoma\Desktop\Publication\Bachelor_Thesis_2025\new_datasets\large_diabetes_dataset", "target": "class"},
     {"name": "cancer", "path": r"C:\Users\thoma\Desktop\Publication\Bachelor_Thesis_2025\datasets\Cancer_Dataset.arff", "target": "Class"}
 ]
 
 
 # Configuration parameters
-N_REPEATS = 1  # Number of times to repeat each experiment
-MISSING_RATES = [0.1]  # Keep missing rate reasonable to preserve some target values
+N_REPEATS = 5  # Number of times to repeat each experiment
+MISSING_RATES = [0.1, 0.2, 0.3]  # Keep missing rate reasonable to preserve some target values
 RANDOM_SEED = 42  # Base random seed
-EPOCHS = 1  # Number of epochs for neural methods
+EPOCHS = 50  # Number of epochs for neural methods
+BATCH_SIZE = 100
+LEARNING_RATE = 2e-4
+EARLY_STOPPING_PATIENCE = 10
 
 # ==========================
 # Define Imputation Methods
@@ -43,7 +55,7 @@ def create_imputation_methods():
     missforest = IterativeImputer(
         estimator=RandomForestRegressor(n_estimators=100, random_state=RANDOM_SEED),
         random_state=RANDOM_SEED,
-        max_iter=1,  # Increased iterations for better convergence
+        max_iter=10,  # Increased iterations for better convergence
         initial_strategy='mean',
         min_value=float('-inf'),
         max_value=float('inf')
@@ -52,7 +64,7 @@ def create_imputation_methods():
     methods['MissForest'] = missforest
 
     # 2. KNN Imputer
-    knn = KNNImputer(n_neighbors=2, weights='uniform')
+    knn = KNNImputer(n_neighbors=5, weights='uniform')
     knn.impute_all_missing = lambda X: knn.fit_transform(X)
     methods['KNN'] = knn
 
@@ -64,8 +76,8 @@ def create_imputation_methods():
     # 4. MICE
     mice = IterativeImputer(
         random_state=RANDOM_SEED,
-        sample_posterior=False,
-        max_iter=1,
+        sample_posterior=True,
+        max_iter=10,
         initial_strategy='mean',
         min_value=float('-inf'),
         max_value=float('inf')
@@ -349,6 +361,17 @@ for dataset in DATASETS:
     all_quality_results.append(quality_summary)
     all_impact_results.append(impact_summary)
 
+    # Optional: run focused uncertainty analysis on this dataset
+    try:
+        ua = UncertaintyAnalysis(n_imputations=30, random_seed=RANDOM_SEED, debug=True, epochs=EPOCHS, test_size=0.2)
+        print(f"Running uncertainty analysis (demo split) on dataset {dataset['name']}")
+        # Pass the processed DataFrame X (with target) and run
+        ua_summary = ua.analyze(X.drop(columns=[target_col]) if target_col in X.columns else X, missing_rate=0.1)
+        print("Uncertainty analysis summary:", ua_summary)
+    except Exception:
+        # Keep main robust: don't fail the batch if uncertainty analysis fails
+        pass
+
     # ==========================
     # Plot Diagrams
     # ==========================
@@ -414,3 +437,81 @@ final_impact.to_csv("results_impact_summary.csv", index=False)
 
 print("\n=== Experiment Completed ===")
 print("Results saved to results_quality_summary.csv and results_impact_summary.csv")
+
+# ==========================
+# Publication-ready plots
+# ==========================
+try:
+    import seaborn as sns
+    sns.set(style='whitegrid')
+except Exception:
+    sns = None
+
+def _save_bar_with_error(df, metric_col, title, filename, ylabel):
+    plt.figure(figsize=(10, 6))
+    order = df['method'].unique()
+    try:
+        if sns is not None:
+            agg = df.groupby('method')[metric_col].agg(['mean', 'std']).reset_index()
+            agg = agg.sort_values('mean')
+            ax = sns.barplot(data=agg, x='method', y='mean', yerr=agg['std'].values, palette='tab10')
+            ax.set_xlabel('Method')
+            ax.set_ylabel(ylabel)
+            ax.set_title(title)
+            plt.xticks(rotation=45, ha='right')
+            for p, val in zip(ax.patches, agg['mean'].values):
+                ax.annotate(f"{val:.2f}", (p.get_x() + p.get_width() / 2., p.get_height()),
+                            ha='center', va='bottom', fontsize=9, color='black', xytext=(0, 4), textcoords='offset points')
+        else:
+            # Fallback simple matplotlib bar with error bars
+            agg = df.groupby('method')[metric_col].agg(['mean', 'std']).reset_index()
+            agg = agg.sort_values('mean')
+            methods = agg['method'].tolist()
+            means = agg['mean'].tolist()
+            errs = agg['std'].tolist()
+            x = range(len(methods))
+            plt.bar(x, means, yerr=errs, tick_label=methods)
+            plt.xlabel('Method')
+            plt.ylabel(ylabel)
+            plt.title(title)
+            plt.xticks(rotation=45, ha='right')
+        plt.tight_layout()
+        plt.savefig(filename)
+        plt.close()
+    except Exception as e:
+        print(f"Could not save {filename}: {e}")
+
+def _save_boxplot(df, metric_col, title, filename, ylabel):
+    plt.figure(figsize=(10, 6))
+    try:
+        if sns is not None:
+            ax = sns.boxplot(data=df, x='method', y=metric_col, palette='tab10')
+            ax.set_xlabel('Method')
+            ax.set_ylabel(ylabel)
+            ax.set_title(title)
+            plt.xticks(rotation=45, ha='right')
+        else:
+            methods = df['method'].unique()
+            data = [df[df['method'] == m][metric_col].dropna().values for m in methods]
+            plt.boxplot(data, labels=methods)
+            plt.xlabel('Method')
+            plt.ylabel(ylabel)
+            plt.title(title)
+            plt.xticks(rotation=45, ha='right')
+        plt.tight_layout()
+        plt.savefig(filename)
+        plt.close()
+    except Exception as e:
+        print(f"Could not save {filename}: {e}")
+
+# Select metrics available in the final quality DataFrame
+if 'continuous_rmse_mean' in final_quality.columns:
+    _save_bar_with_error(final_quality, 'continuous_rmse_mean', 'Mean Continuous RMSE by Method', 'pub_continuous_rmse_bar.png', 'Continuous RMSE (mean)')
+    _save_boxplot(final_quality, 'continuous_rmse_mean', 'Distribution of Continuous RMSE by Method', 'pub_continuous_rmse_box.png', 'Continuous RMSE')
+
+if 'discrete_f1_mean' in final_quality.columns:
+    _save_bar_with_error(final_quality, 'discrete_f1_mean', 'Mean Discrete F1 by Method', 'pub_discrete_f1_bar.png', 'Discrete F1 (mean)')
+    _save_boxplot(final_quality, 'discrete_f1_mean', 'Distribution of Discrete F1 by Method', 'pub_discrete_f1_box.png', 'Discrete F1')
+
+print("Publication-ready plots saved: pub_continuous_rmse_bar.png, pub_continuous_rmse_box.png, pub_discrete_f1_bar.png, pub_discrete_f1_box.png (when metrics present)")
+

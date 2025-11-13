@@ -10,6 +10,7 @@ from bn_bgan.bn_bgan_imp import BN_AUG_Imputer
 from sklearn.experimental import enable_iterative_imputer  # noqa
 from sklearn.impute import SimpleImputer, IterativeImputer
 
+
 # =========================
 # Missingness Pattern Utils
 # =========================
