@@ -1,6 +1,5 @@
 # Synthetic Data Generation & Imputation  
-**Maastricht University**  
-**Bachelor of Data Science and Artificial Intelligence**  
+Paper Title: Uncertainty-Aware Data Imputation Using Bayesian Network Guided Bayesian GANs
 
 This repository contains code for benchmarking and evaluating synthetic data generation (SDG) and imputation methods, including BGAN, BN-AUG-SDG, CTGAN, and others. 
 
