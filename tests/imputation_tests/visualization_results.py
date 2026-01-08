@@ -25,6 +25,12 @@ plt.rcParams.update({
     'figure.autolayout': True
 })
 
+# Mapping for method display names
+METHOD_NAME_MAPPING = {
+    'BGAIN': 'BGAN',
+    'BN_AUG_Imputer': 'BN-BGAN'
+}
+
 def create_rmse_comparison_plot(df):
     """Create box plot comparing RMSE across methods, missing patterns, and datasets."""
     # Filter for complete_train scenario
@@ -70,16 +76,21 @@ def create_rmse_comparison_plot(df):
                 ax.set_ylabel(f'{dataset.capitalize()}\nRMSE')
             
             ax.set_xticks(range(1, len(methods) + 1))
-            
-            
-            # Add grid for better readability
+            if row == 1:  # Only show method names on bottom row
+                # Map method names for display
+                display_names = [METHOD_NAME_MAPPING.get(m, m) for m in methods]
+                ax.set_xticklabels(display_names, rotation=45, ha='right')
+            else:
+                ax.set_xticklabels([])
             ax.yaxis.grid(True, linestyle='--', alpha=0.7)
     
     # Create legend in the bottom row of GridSpec
     legend_ax = fig.add_subplot(gs[2, :])
     legend_ax.axis('off')
-    legend_elements = [Patch(facecolor=color, alpha=0.7, label=method)
-                      for color, method in zip(colors, methods)]
+    # Map method names for legend
+    display_names = [METHOD_NAME_MAPPING.get(m, m) for m in methods]
+    legend_elements = [Patch(facecolor=color, alpha=0.7, label=display_name)
+                      for color, display_name in zip(colors, display_names)]
     legend_ax.legend(handles=legend_elements, loc='center', 
                     ncol=3, frameon=False, 
                     bbox_to_anchor=(0.5, 0.5))
@@ -131,10 +142,12 @@ def create_missing_rate_impact_plot(df):
                 # Sort by missing rate to ensure proper line connection
                 method_data = method_data.sort_values('missing_rate')
                 
+                # Use display name for label
+                display_name = METHOD_NAME_MAPPING.get(method, method)
                 ax.errorbar(method_data['missing_rate'], 
                           method_data['continuous_rmse_mean'],
                           yerr=method_data['continuous_rmse_std'],
-                          label=method,
+                          label=display_name,
                           color=colors[method],
                           marker=markers[method],
                           markersize=6,
@@ -145,15 +158,31 @@ def create_missing_rate_impact_plot(df):
             
             # Customize each subplot
             ax.grid(True, linestyle='--', alpha=0.3)
-            ax.set_xlabel('Missing Rate' if i == 2 else '')
-            ax.set_ylabel('RMSE' if j == 0 else '')
             
-            # Add pattern and dataset labels
+            # Only add labels on outer edges for cleaner appearance
+            if i == 2:  # Bottom row
+                ax.set_xlabel('Missing Rate (%)', fontsize=10)
+            if j == 0:  # Left column
+                ax.set_ylabel('RMSE', fontsize=10)
+            
+            # Add pattern label on left side (y-axis area)
             if j == 0:
-                ax.set_title(f'{pattern}', pad=10, fontsize=11)
+                # Create pattern description
+                pattern_desc = {
+                    'MAR': 'Missing at Random',
+                    'MCAR': 'Missing Completely at Random',
+                    'MNAR': 'Missing Not at Random'
+                }
+                ax.text(-0.45, 0.5, pattern_desc[pattern],
+                       transform=ax.transAxes, fontsize=10, weight='bold',
+                       rotation=90, verticalalignment='center',
+                       horizontalalignment='center')
+            
+            # Add dataset label at the top in a subtle way
             if i == 0:
-                ax.text(0.5, 1.15, f'{dataset.capitalize()}',
-                       transform=ax.transAxes, fontsize=11,
+                dataset_labels = {'hepatitis': 'Hepatitis Dataset', 'heart': 'Heart Disease Dataset'}
+                ax.text(0.5, 1.12, dataset_labels[dataset],
+                       transform=ax.transAxes, fontsize=10, weight='bold',
                        horizontalalignment='center')
             
             # Set consistent y-axis limits for each dataset
@@ -162,7 +191,7 @@ def create_missing_rate_impact_plot(df):
             else:
                 ax.set_ylim(0, 45)
             
-            # Format x-axis
+            # Format x-axis with percentage labels
             ax.set_xticks([0.1, 0.2, 0.3])
             ax.set_xticklabels(['10%', '20%', '30%'])
     
@@ -170,19 +199,20 @@ def create_missing_rate_impact_plot(df):
     legend_ax = fig.add_subplot(gs[3, :])
     legend_ax.axis('off')
     
-    # Create legend with both methods
+    # Create legend with both methods using display names
     legend_elements = []
     for method in ['BGAIN', 'BN_AUG_Imputer']:
+        display_name = METHOD_NAME_MAPPING.get(method, method)
         legend_elements.append(
             plt.Line2D([0], [0], color=colors[method], marker=markers[method],
-                      label=method, markersize=6, linewidth=1.5)
+                      label=display_name, markersize=6, linewidth=1.5)
         )
     legend_ax.legend(handles=legend_elements, loc='center', ncol=2,
                     frameon=False, bbox_to_anchor=(0.5, 0.5))
     
     # Add overall title with proper spacing
-    fig.suptitle('Impact of Missing Rate on Imputation Performance\nBy Missing Pattern and Dataset',
-                y=1.02, fontsize=12)
+    fig.suptitle('Performance Sensitivity to Missing Data Mechanisms and Rate',
+                y=1.02, fontsize=12, weight='bold')
     
     # Save figure
     plt.savefig('missing_rate_impact.pdf', dpi=300, bbox_inches='tight')
@@ -277,8 +307,9 @@ def create_comprehensive_summary(df):
     plt.ylabel('RMSE')
     plt.title('Overall Imputation Performance Comparison', pad=20)
     
-    # Set x-axis labels
-    plt.xticks(range(1, len(methods) + 1), methods, rotation=45, ha='right')
+    # Set x-axis labels with display names
+    display_names = [METHOD_NAME_MAPPING.get(m, m) for m in methods]
+    plt.xticks(range(1, len(methods) + 1), display_names, rotation=45, ha='right')
     
     # Add statistical annotations
     # Perform Wilcoxon test between BGAIN and BN_AUG_Imputer

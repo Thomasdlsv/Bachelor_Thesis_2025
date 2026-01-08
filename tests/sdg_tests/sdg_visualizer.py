@@ -54,6 +54,34 @@ class SDGVisualizer:
     """
 
     @staticmethod
+    def get_loss_config_label(use_kl_loss, use_uncertainty_loss):
+        """
+        Generate a human-readable label for loss configurations.
+        
+        Mapping:
+        - Both True: "KL+CL" (KL Divergence + Calibration Loss)
+        - KL True, CL False: "KL" 
+        - KL False, CL True: "CL"
+        - Both False: "Adversarial"
+        
+        Args:
+            use_kl_loss: Boolean indicating if KL loss is used
+            use_uncertainty_loss: Boolean indicating if Calibration/Uncertainty loss is used
+            
+        Returns:
+            String label for the loss configuration
+        """
+        if use_kl_loss and use_uncertainty_loss:
+            return "KL+CL"
+        elif use_kl_loss:
+            return "KL"
+        elif use_uncertainty_loss:
+            return "CL"
+        else:
+            return "Adversarial Loss Only"
+
+    @staticmethod
+
     def plot_correlation_matrices(real_data, bgan_data, bnaug_data):
 
         """
@@ -203,6 +231,7 @@ class SDGVisualizer:
         plt.tight_layout()
         plt.show()
 
+    @staticmethod
     def plot_feature_distributions(real_data, bgan_data, bnaug_data, features=None, bins=30):
 
         """
@@ -233,6 +262,7 @@ class SDGVisualizer:
             plt.tight_layout()
             plt.show()
 
+    @staticmethod
     def plot_correlation_matrices(real_data, bgan_data, bnaug_data):
 
         """
@@ -260,6 +290,7 @@ class SDGVisualizer:
         plt.tight_layout()
         plt.show()
 
+    @staticmethod
     def plot_pca(real_data, bgan_data, bnaug_data):
 
         """Plot PCA visualization of real and synthetic data"""
@@ -303,6 +334,7 @@ class SDGVisualizer:
         plt.title('PCA projection: Real vs BGAN vs BN-AUG-SDG')
         plt.show()
 
+    @staticmethod
     def compute_mmd(X, Y, kernel_bandwidth=None):
 
         """
@@ -325,6 +357,7 @@ class SDGVisualizer:
         XY = rbf_kernel(X_std, Y_std, gamma=gamma)
         return XX.mean() + YY.mean() - 2 * XY.mean()
 
+    @staticmethod
     def calculate_diversity(data):
 
         """
@@ -336,6 +369,7 @@ class SDGVisualizer:
         score = silhouette_score(data, kmeans.labels_)
         return score
 
+    @staticmethod
     def plot_uncertainty_heatmap(synthetic_data, title="Uncertainty Heatmap", columns=None):
 
         """Plot feature-wise variance as a heatmap for synthetic data."""
@@ -356,6 +390,7 @@ class SDGVisualizer:
         plt.yticks([])
         plt.show()
 
+    @staticmethod
     def classifier_performance(y_true, y_pred):
 
         """
@@ -460,13 +495,22 @@ class SDGVisualizer:
                         break
 
                 agg = {col: [metric_df[col].mean(), metric_df[col].std(ddof=0)] for col in metric_df.columns}
-                results.append({
+                result_dict = {
                     'Method': method_name,
                     **params,
                     **{f"{k}_mean": v[0] for k, v in agg.items()},
                     **{f"{k}_std": v[1] for k, v in agg.items()},
                     'Runs': len(metric_df)
-                })
+                }
+                
+                # Add loss config label if both parameters exist
+                if 'use_kl_loss' in params and 'use_uncertainty_loss' in params:
+                    result_dict['loss_config'] = SDGVisualizer.get_loss_config_label(
+                        params['use_kl_loss'], 
+                        params['use_uncertainty_loss']
+                    )
+                
+                results.append(result_dict)
 
 
         # BGAN grid search
@@ -541,7 +585,7 @@ class SDGVisualizer:
             'KL_Divergence': kl_div
         }
 
-
+    @staticmethod
     def plot_uncertainty_delta(real_data, synthetic_data, title="Δ Uncertainty (Variance)", cols=None):
         """Compare variance between real and synthetic data."""
         if isinstance(real_data, pd.DataFrame):

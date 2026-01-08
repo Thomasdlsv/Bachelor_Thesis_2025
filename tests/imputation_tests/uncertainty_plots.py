@@ -28,6 +28,11 @@ plt.rcParams['xtick.labelsize'] = 10
 plt.rcParams['ytick.labelsize'] = 10
 plt.rcParams['legend.fontsize'] = 10
 
+# Mapping for method display names
+METHOD_NAME_MAPPING = {
+    'BGAIN': 'BGAN',
+    'BN_AUG_Imputer': 'BN-BGAN'
+}
 def load_uncertainty_data():
     """Load uncertainty analysis results."""
     test_stds = pd.read_csv('test_uncertainty_per_cell_stds.csv')
@@ -42,6 +47,12 @@ def create_ieee_boxplot(test_stds):
         'BGAIN': test_stds['BGAIN_std'],
         'BN-AUG': test_stds['BN_AUG_std']
     }).melt(var_name='Method', value_name='Uncertainty (σ)')
+    
+    # Map method names for display
+    plot_data['Method'] = plot_data['Method'].map({
+        'BGAIN': METHOD_NAME_MAPPING['BGAIN'],
+        'BN-AUG': METHOD_NAME_MAPPING['BN_AUG_Imputer']
+    })
     
     # Create box plot with IEEE style
     sns.boxplot(data=plot_data, x='Method', y='Uncertainty (σ)', 
@@ -119,7 +130,7 @@ def create_ieee_table(test_stds):
     # Create table with IEEE formatting
     table = ax.table(cellText=[[stats_dict['Metric'][i], stats_dict['BGAIN'][i], stats_dict['BN-AUG'][i]] 
                               for i in range(len(stats_dict['Metric']))],
-                    colLabels=['Metric', 'BGAIN', 'BN-AUG'],
+                    colLabels=['Metric', METHOD_NAME_MAPPING['BGAIN'], METHOD_NAME_MAPPING['BN_AUG_Imputer']],
                     cellLoc='center',
                     loc='center',
                     bbox=[0, 0, 1, 1])
