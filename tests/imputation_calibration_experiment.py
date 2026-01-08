@@ -390,7 +390,7 @@ if not results_df.empty:
         ax.set_xlabel('Missingness Rate (%)')
         ax.set_ylabel('PICP (Coverage)')
         ax.set_title(f'{dataset.upper()}')
-        ax.set_ylim([0.0, 1.05])  # Show full range to include all methods
+        ax.set_ylim([0.85, 1.05])
         ax.legend()
         ax.grid(True, alpha=0.3)
     

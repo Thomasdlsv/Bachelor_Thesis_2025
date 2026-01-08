@@ -5,6 +5,14 @@
 
 
 
+import sys
+import os
+
+# Add repo root to path
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -12,9 +20,6 @@ import seaborn as sns
 from fancyimpute import IterativeImputer
 from sklearn.impute import SimpleImputer, KNNImputer
 from sklearn.ensemble import RandomForestRegressor
-import os
-import io
-import seaborn as sns
 
 from bgan.utility.bgan_imp import BGAIN
 from bn_bgan.bn_bgan_imp import BN_AUG_Imputer
@@ -35,8 +40,8 @@ DATASETS = [
 
 
 # Configuration parameters
-N_REPEATS = 5  # Number of times to repeat each experiment
-MISSING_RATES = [0.1, 0.2, 0.3]  # Keep missing rate reasonable to preserve some target values
+N_REPEATS = 1  # Number of times to repeat each experiment
+MISSING_RATES = [0.1]  # Keep missing rate reasonable to preserve some target values
 RANDOM_SEED = 42  # Base random seed
 EPOCHS = 50  # Number of epochs for neural methods
 BATCH_SIZE = 100

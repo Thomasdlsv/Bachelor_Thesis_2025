@@ -1,9 +1,8 @@
 # Synthetic Data Generation & Imputation  
 **Maastricht University**  
 **Bachelor of Data Science and Artificial Intelligence**  
-**Author:** Thomás de los Santos Verrijp
 
-This repository contains code for benchmarking and evaluating synthetic data generation (SDG) and imputation methods, including BGAN, BN-AUG-SDG, CTGAN, and others.
+This repository contains code for benchmarking and evaluating synthetic data generation (SDG) and imputation methods, including BGAN, BN-AUG-SDG, CTGAN, and others. 
 
 ## Acknowledgments & Attribution
 
@@ -44,25 +43,22 @@ The BGAN and BN-AUG-SDG implementations extend CTGAN with Bayesian uncertainty e
   Make sure you're in the directory of the project in your storage
     cd location
   
-  Create an environment
-    ```bash
+  Create an environment:
+    
     python -m venv venv
-    ```
+    
+  Activate the environment:
+    
+    .\venv\Scripts\Activate.ps1
   
-  Activate the environment
-    ```bash
-    source venv/bin/activate
-    ```
-  
-  Make sure pip is up-to-date
-    ```bash
+  Make sure pip is up-to-date:
+    
     pip install --upgrade pip
-    ```
-  
+    
   Download the requirements for this project:
-    ```bash
+    
     pip install -r requirements.txt
-    ```
+    
 
 ---
   
@@ -70,10 +66,8 @@ The BGAN and BN-AUG-SDG implementations extend CTGAN with Bayesian uncertainty e
 
   **Primary experiment script (main results in report):**
 
-  ```bash
   python tests/main.py
-  ```
-
+  
   This script performs the core imputation experiments from the report:
   - **Datasets tested:** Hepatitis, Heart Disease, Cancer (healthcare datasets as per report focus)
   - **Missing rates:** 10%, 20%, 30% Missing Completely At Random (MCAR)

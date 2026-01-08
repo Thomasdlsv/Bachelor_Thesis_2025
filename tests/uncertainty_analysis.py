@@ -11,6 +11,14 @@ positions, and performs paired Wilcoxon + paired Cohen's d on the per-cell
 stds. The module is intentionally minimal and intended to be imported and
 called from your experiment driver.
 """
+import sys
+import os
+
+# Add repo root to path
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple
